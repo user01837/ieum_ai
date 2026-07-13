@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from app.classifier.ollama_client import classify_text, generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
+from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
 from app.vectorstore.chroma_client import search_similar_complaints, add_complaint
 
 router = APIRouter(prefix="/api", tags=["ai"])
@@ -36,6 +37,10 @@ class IndexComplaintRequest(BaseModel):
     department_code: str
     domain_code: str | None = None
     status_code: str | None = None
+
+
+class LegalChatRequest(BaseModel):
+    question: str
 
 
 @router.post("/classify", response_model=ClassifyResponse)
@@ -91,6 +96,25 @@ async def draft_answer(req: DraftRequest):
             guarded["verification"]["unverified_claims"]
             if guarded["verification"] else {}
         ),
+    }
+
+
+@router.post("/legal-chat")
+async def legal_chat(req: LegalChatRequest):
+    """
+    법률챗봇 - 질문과 관련된 법령 조문을 검색해 근거로 답변 생성.
+    우측하단 챗봇 아이콘 전용 엔드포인트 (부서/프로젝트 무관, 전 직원 접근).
+
+    /api/draft와 달리 department_code/domain_code를 받지 않음 - 법률 정보는
+    부서 구분 없이 전체 법령 코퍼스(legal_documents 컬렉션)에서 검색하기 때문.
+    답변 속도를 위해 top_k=2, num_predict=150으로 제한 (legal_chat.py 참고).
+    """
+    articles = search_legal_articles(req.question, top_k=2)
+    answer = await generate_legal_answer(req.question, articles)
+
+    return {
+        "answer": answer,
+        "referenced_articles": articles,
     }
 
 
