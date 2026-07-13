@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.classifier.ollama_client import classify_text, generate_draft_answer
+from app.classifier.draft_guardrail import apply_guardrail
 from app.vectorstore.chroma_client import search_similar_complaints, add_complaint
 
 router = APIRouter(prefix="/api", tags=["ai"])
@@ -58,7 +59,16 @@ async def similar_cases(req: SimilarCasesRequest):
 
 @router.post("/draft")
 async def draft_answer(req: DraftRequest):
-    """유사사례를 근거로 답변 초안 생성 (Llama3.1)."""
+    """
+    유사사례를 근거로 답변 초안 생성 (Llama3.1).
+
+    가드레일 2단계 적용:
+    1) 유사도 가드레일: top1 유사도가 65% 미만이면 draft를 안전한 안내 문구로 자동 교체
+       (guardrail_triggered=True로 표시)
+    2) 사실 검증 가드레일: 유사도는 통과했지만 draft 안의 법조문/금액/기간 등 구체적 사실이
+       참고사례 원문에 없으면 needs_review=True로 표시 (draft 자체는 그대로 반환, 프론트에서
+       "⚠ AI 생성 정보 재확인 필요" 배지 등으로 안내하는 용도)
+    """
     similar = search_similar_complaints(
         query_text=req.complaint_text,
         department_code=req.department_code,
@@ -66,7 +76,22 @@ async def draft_answer(req: DraftRequest):
         top_k=3,
     )
     draft = await generate_draft_answer(req.complaint_text, similar)
-    return {"draft": draft, "referenced_cases": similar}
+
+    guarded = apply_guardrail(draft, similar, similarity_threshold=65.0)
+
+    return {
+        "draft": guarded["draft"],
+        "referenced_cases": similar,
+        "guardrail_triggered": guarded["guardrail_triggered"],
+        "needs_review": (
+            guarded["verification"]["has_unverified"]
+            if guarded["verification"] else False
+        ),
+        "unverified_claims": (
+            guarded["verification"]["unverified_claims"]
+            if guarded["verification"] else {}
+        ),
+    }
 
 
 @router.post("/index-complaint")

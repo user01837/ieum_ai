@@ -1,0 +1,319 @@
+{
+  "overall_accuracy": 92.5,
+  "per_domain": {
+    "교통": {
+      "correct": 5,
+      "total": 5
+    },
+    "주택·건축": {
+      "correct": 5,
+      "total": 5
+    },
+    "환경": {
+      "correct": 4,
+      "total": 5
+    },
+    "복지": {
+      "correct": 5,
+      "total": 5
+    },
+    "안전": {
+      "correct": 3,
+      "total": 5
+    },
+    "경제·산업": {
+      "correct": 5,
+      "total": 5
+    },
+    "문화·체육·관광": {
+      "correct": 5,
+      "total": 5
+    },
+    "행정·일반": {
+      "correct": 5,
+      "total": 5
+    }
+  },
+  "details": [
+    {
+      "no": 1,
+      "expected": "교통",
+      "question": "버스정류장 앞 불법주차로 승하차가 어렵다는 민원이 왔을 때 어떻게 답변해야 하나요?",
+      "predicted": "교통",
+      "correct": true
+    },
+    {
+      "no": 2,
+      "expected": "교통",
+      "question": "어린이보호구역에 과속 단속 카메라 설치를 요청하는 민원엔 어떻게 답변하나요?",
+      "predicted": "교통",
+      "correct": true
+    },
+    {
+      "no": 3,
+      "expected": "교통",
+      "question": "도로 포트홀(파손) 신고가 들어오면 어떤 절차로 답변하나요?",
+      "predicted": "교통",
+      "correct": true
+    },
+    {
+      "no": 4,
+      "expected": "교통",
+      "question": "신호등 고장으로 교차로가 정체된다는 민원엔 어떻게 답변하나요?",
+      "predicted": "교통",
+      "correct": true
+    },
+    {
+      "no": 5,
+      "expected": "교통",
+      "question": "자전거도로에 적치물이 있어 통행이 불편하다는 민원엔 어떻게 답변하나요?",
+      "predicted": "교통",
+      "correct": true
+    },
+    {
+      "no": 6,
+      "expected": "주택·건축",
+      "question": "무허가 건축물 신고가 들어오면 어떻게 답변하나요?",
+      "predicted": "주택·건축",
+      "correct": true
+    },
+    {
+      "no": 7,
+      "expected": "주택·건축",
+      "question": "옆집 증축 공사로 일조권이 침해된다는 민원엔 어떻게 답변하나요?",
+      "predicted": "주택·건축",
+      "correct": true
+    },
+    {
+      "no": 8,
+      "expected": "주택·건축",
+      "question": "노후 주택 붕괴 위험이 있다는 안전진단 요청엔 어떻게 답변하나요?",
+      "predicted": "주택·건축",
+      "correct": true
+    },
+    {
+      "no": 9,
+      "expected": "주택·건축",
+      "question": "건축 허가 절차를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "주택·건축",
+      "correct": true
+    },
+    {
+      "no": 10,
+      "expected": "주택·건축",
+      "question": "다세대주택 주차공간 부족 민원엔 어떻게 답변하나요?",
+      "predicted": "주택·건축",
+      "correct": true
+    },
+    {
+      "no": 11,
+      "expected": "환경",
+      "question": "인근 공장에서 나는 매연 냄새 민원엔 어떻게 답변하나요?",
+      "predicted": "환경",
+      "correct": true
+    },
+    {
+      "no": 12,
+      "expected": "환경",
+      "question": "하천에 무단 방류가 있다는 신고엔 어떻게 답변하나요?",
+      "predicted": "환경",
+      "correct": true
+    },
+    {
+      "no": 13,
+      "expected": "환경",
+      "question": "야간 공사장 소음이 심하다는 민원엔 어떻게 답변하나요?",
+      "predicted": "교통",
+      "correct": false
+    },
+    {
+      "no": 14,
+      "expected": "환경",
+      "question": "불법 폐기물 투기 신고엔 어떻게 답변하나요?",
+      "predicted": "환경",
+      "correct": true
+    },
+    {
+      "no": 15,
+      "expected": "환경",
+      "question": "미세먼지가 심한 날 저감 조치를 요청하는 민원엔 어떻게 답변하나요?",
+      "predicted": "환경",
+      "correct": true
+    },
+    {
+      "no": 16,
+      "expected": "복지",
+      "question": "독거노인 돌봄 서비스를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "복지",
+      "correct": true
+    },
+    {
+      "no": 17,
+      "expected": "복지",
+      "question": "기초생활수급 자격을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "복지",
+      "correct": true
+    },
+    {
+      "no": 18,
+      "expected": "복지",
+      "question": "장애인 이동지원 서비스를 요청하는 민원엔 어떻게 답변하나요?",
+      "predicted": "복지",
+      "correct": true
+    },
+    {
+      "no": 19,
+      "expected": "복지",
+      "question": "아동수당 지급이 지연된다는 민원엔 어떻게 답변하나요?",
+      "predicted": "복지",
+      "correct": true
+    },
+    {
+      "no": 20,
+      "expected": "복지",
+      "question": "저소득층 난방비 지원을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "복지",
+      "correct": true
+    },
+    {
+      "no": 21,
+      "expected": "안전",
+      "question": "놀이터 시설이 노후해서 위험하다는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": false
+    },
+    {
+      "no": 22,
+      "expected": "안전",
+      "question": "가로등이 고장나서 밤에 위험하다는 민원엔 어떻게 답변하나요?",
+      "predicted": "교통",
+      "correct": false
+    },
+    {
+      "no": 23,
+      "expected": "안전",
+      "question": "재난 대피소 위치를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "안전",
+      "correct": true
+    },
+    {
+      "no": 24,
+      "expected": "안전",
+      "question": "공사장에 안전펜스가 없어서 위험하다는 신고엔 어떻게 답변하나요?",
+      "predicted": "안전",
+      "correct": true
+    },
+    {
+      "no": 25,
+      "expected": "안전",
+      "question": "산책로에 낙석 위험이 있다는 신고엔 어떻게 답변하나요?",
+      "predicted": "안전",
+      "correct": true
+    },
+    {
+      "no": 26,
+      "expected": "경제·산업",
+      "question": "전통시장 상권 활성화 지원을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "경제·산업",
+      "correct": true
+    },
+    {
+      "no": 27,
+      "expected": "경제·산업",
+      "question": "소상공인 대출 지원을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "경제·산업",
+      "correct": true
+    },
+    {
+      "no": 28,
+      "expected": "경제·산업",
+      "question": "창업 지원금 신청 절차를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "경제·산업",
+      "correct": true
+    },
+    {
+      "no": 29,
+      "expected": "경제·산업",
+      "question": "지역화폐 가맹점 등록을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "경제·산업",
+      "correct": true
+    },
+    {
+      "no": 30,
+      "expected": "경제·산업",
+      "question": "골목상권 주차공간 부족 민원엔 어떻게 답변하나요?",
+      "predicted": "경제·산업",
+      "correct": true
+    },
+    {
+      "no": 31,
+      "expected": "문화·체육·관광",
+      "question": "공공체육시설 예약 방법을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": true
+    },
+    {
+      "no": 32,
+      "expected": "문화·체육·관광",
+      "question": "지역 축제 일정을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": true
+    },
+    {
+      "no": 33,
+      "expected": "문화·체육·관광",
+      "question": "도서관 좌석 예약 시스템 오류를 신고하는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": true
+    },
+    {
+      "no": 34,
+      "expected": "문화·체육·관광",
+      "question": "관광안내소 운영시간을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": true
+    },
+    {
+      "no": 35,
+      "expected": "문화·체육·관광",
+      "question": "문화회관 대관 절차를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "문화·체육·관광",
+      "correct": true
+    },
+    {
+      "no": 36,
+      "expected": "행정·일반",
+      "question": "주민등록등본 발급 오류 정정을 요청하는 민원엔 어떻게 답변하나요?",
+      "predicted": "행정·일반",
+      "correct": true
+    },
+    {
+      "no": 37,
+      "expected": "행정·일반",
+      "question": "인감증명서 발급 방법을 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "행정·일반",
+      "correct": true
+    },
+    {
+      "no": 38,
+      "expected": "행정·일반",
+      "question": "민원 처리가 지연되고 있다는 항의엔 어떻게 답변하나요?",
+      "predicted": "행정·일반",
+      "correct": true
+    },
+    {
+      "no": 39,
+      "expected": "행정·일반",
+      "question": "공공요금 고지서 오류 정정을 요청하는 민원엔 어떻게 답변하나요?",
+      "predicted": "행정·일반",
+      "correct": true
+    },
+    {
+      "no": 40,
+      "expected": "행정·일반",
+      "question": "정보공개청구 절차를 문의하는 민원엔 어떻게 답변하나요?",
+      "predicted": "행정·일반",
+      "correct": true
+    }
+  ]
+}
