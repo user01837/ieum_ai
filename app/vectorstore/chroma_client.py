@@ -1,16 +1,24 @@
-"""
-ChromaDB 연결 + 저장/검색 모듈.
+﻿"""
+ChromaDB 연결 + 유사 사례 검색 모듈.
 
-컬렉션 하나(complaints)에 민원 텍스트를 저장하고,
-department_code(부서) 메타데이터로 필터링한 뒤 벡터 유사도로 검색한다.
+컬렉션 하나(complaints)에 민원 텍스트를 저장하고
+department_code(부서) 메타데이터로 필터링한 후 벡터 유사도로 검색한다.
 
-주의: 이 모듈은 "저장된 벡터를 검색"만 담당한다.
-실제 민원 데이터를 여기 넣는 배치 스크립트는 scripts/ingest_complaints.py 참고 (별도 작성 필요).
+검색 과정:
+    1) 임베딩 유사도로 넉넉히(rerank_candidates개) 후보를 뽑고
+    2) 리랭커(cross-encoder)로 질문-문서 쌍을 직접 비교해 재정렬
+    3) 재정렬된 순서에서 상위 top_k개만 반환
+    (가드레일 판단에 쓰이는 similarity 값은 리랭커 점수가 아니라
+     기존 임베딩 유사도를 그대로 유지 - 65% 임계값 로직과의 일관성 유지 목적)
+
+주의: 이 모듈은 "저장된 벡터를 검색만 담당한다.
+실제 민원 데이터를 여기 넣는 배치 스크립트는 data/seed_ingest.py 참고 (별도 작성 필요).
 """
 import chromadb
 
 from app.core.config import settings
 from app.embeddings.embedder import embed_text, embed_texts
+from app.embeddings.reranker import rerank
 
 _client = None
 _collection = None
@@ -63,7 +71,7 @@ def add_complaint(
 
 def add_complaints_batch(items: list[dict]) -> None:
     """
-    여러 건을 한 번에 저장 (초기 데이터 이관용).
+    여러 건을 한 번에 저장(초기 데이터 적재용).
     items 각 원소: {"complaint_id", "title", "content", "department_code", "domain_code", "status_code"}
     """
     texts = [f"{it['title']}\n{it['content']}" for it in items]
@@ -87,10 +95,15 @@ def search_similar_complaints(
     department_code: str,
     domain_code: str | None = None,
     top_k: int = 3,
+    rerank_candidates: int = 15,
 ) -> list[dict]:
     """
     질문/민원 텍스트와 유사한 과거 민원을 부서 범위 내에서 검색.
-    domain_code를 주면 도메인까지 같이 필터링(분류기가 붙인 라벨 활용).
+    domain_code를 주면 도메인까지 같이 필터링(분류기와 붙일 때 쓸 예정).
+
+    1) 임베딩 유사도로 rerank_candidates개 후보 확보
+    2) 리랭커로 재정렬
+    3) 상위 top_k개 반환 (similarity 필드는 임베딩 기준값 유지, rerank_score는 참고용 추가)
     """
     collection = get_collection()
     vector = embed_text(query_text)
@@ -101,20 +114,19 @@ def search_similar_complaints(
 
     result = collection.query(
         query_embeddings=[vector],
-        n_results=top_k,
+        n_results=rerank_candidates,
         where=where,
     )
 
-    hits = []
     ids = result.get("ids", [[]])[0]
     documents = result.get("documents", [[]])[0]
     metadatas = result.get("metadatas", [[]])[0]
     distances = result.get("distances", [[]])[0]
 
+    candidates = []
     for i in range(len(ids)):
-        # cosine distance -> 유사도(%)로 변환 (거리가 작을수록 유사)
         similarity_pct = round((1 - distances[i]) * 100, 1)
-        hits.append({
+        candidates.append({
             "complaint_id": metadatas[i].get("complaint_id"),
             "document": documents[i],
             "department_code": metadatas[i].get("department_code"),
@@ -122,4 +134,15 @@ def search_similar_complaints(
             "status_code": metadatas[i].get("status_code"),
             "similarity": similarity_pct,
         })
-    return hits
+
+    if not candidates:
+        return []
+
+    rerank_scores = rerank(query_text, [c["document"] for c in candidates])
+    for c, score in zip(candidates, rerank_scores):
+        c["rerank_score"] = round(score, 4)
+
+    candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
+
+    return candidates[:top_k]
+
