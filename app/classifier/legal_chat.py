@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 법률챗봇 검색 + 답변 생성 (답변 출력 속도 최우선 설계).
-
 기존 generate_draft_answer()(민원 답변 초안, num_predict=300, top_k=3)와 비교해서
 아래 3가지를 줄여 응답 속도를 끌어올림:
     1) top_k: 3 → 2   (검색 결과가 적을수록 프롬프트가 짧아져 생성이 빨라짐)
@@ -10,21 +9,15 @@
     3) 프롬프트 지시문 자체도 대폭 축소 (draft 프롬프트처럼 8줄짜리 세부 지침을
        주지 않고 핵심 지침 2줄만 사용 - 프롬프트가 길수록 첫 토큰까지 걸리는
        시간(prefill)도 늘어나므로 이것도 속도에 영향을 줌)
-
 사용 위치: app/api/routes.py에 /api/legal-chat 엔드포인트로 연결
 """
 import httpx
 import chromadb
-
 from app.core.config import settings
 from app.embeddings.embedder import embed_text
-
 LEGAL_COLLECTION_NAME = "legal_documents"
-
 _legal_client = None
 _legal_collection = None
-
-
 def get_legal_collection():
     global _legal_client, _legal_collection
     if _legal_collection is None:
@@ -34,23 +27,21 @@ def get_legal_collection():
             metadata={"hnsw:space": "cosine"},
         )
     return _legal_collection
-
-
-def search_legal_articles(query_text: str, top_k: int = 2) -> list[dict]:
-    """질문과 유사한 법령 조문 검색 (top_k=2로 최소화 - 속도 우선)."""
+def search_legal_articles(query_text: str, top_k: int = 2, min_similarity: float = 50.0) -> list[dict]:
+    """질문과 유사한 법령 조문 검색 (top_k=2로 최소화 - 속도 우선).
+    min_similarity 미만인 결과는 제외 (관련 없는 조문으로 억지 답변 생성 방지)."""
     collection = get_legal_collection()
     vector = embed_text(query_text)
-
     result = collection.query(query_embeddings=[vector], n_results=top_k)
-
     hits = []
     ids = result.get("ids", [[]])[0]
     documents = result.get("documents", [[]])[0]
     metadatas = result.get("metadatas", [[]])[0]
     distances = result.get("distances", [[]])[0]
-
     for i in range(len(ids)):
         similarity_pct = round((1 - distances[i]) * 100, 1)
+        if similarity_pct < min_similarity:
+            continue
         hits.append({
             "law_title": metadatas[i].get("law_title"),
             "article_no": metadatas[i].get("article_no"),
@@ -59,13 +50,15 @@ def search_legal_articles(query_text: str, top_k: int = 2) -> list[dict]:
             "similarity": similarity_pct,
         })
     return hits
-
-
 async def generate_legal_answer(question: str, articles: list[dict]) -> str:
     """
     검색된 조문을 근거로 짧고 빠르게 답변 생성.
     프롬프트를 최소화하고 num_predict를 낮춰 응답 속도를 우선함.
+    articles가 비어있으면(관련 조문 없음) LLM 호출 없이 안내 문구 반환.
     """
+    if not articles:
+        return "죄송합니다. 문의하신 내용과 관련된 법령 조문을 찾지 못했습니다. 담당 부서에 직접 문의해 주시기 바랍니다."
+
     context_block = "\n".join(
         f"[{a['law_title']} 제{a['article_no']}조({a['article_title']})] {a['document']}"
         for a in articles
@@ -76,7 +69,6 @@ async def generate_legal_answer(question: str, articles: list[dict]) -> str:
         f"[질문]\n{question}\n\n"
         "[답변]"
     )
-
     async with httpx.AsyncClient(timeout=60.0) as client:
         res = await client.post(
             f"{settings.ollama_host}/api/generate",
