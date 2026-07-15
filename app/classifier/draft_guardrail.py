@@ -66,7 +66,10 @@ def verify_draft_claims(draft_text: str, referenced_cases: list[dict]) -> dict:
             "has_unverified": bool,  # 하나라도 검증 안 된 게 있으면 True
         }
     """
-    reference_text = " ".join(case.get("document", "") for case in referenced_cases)
+    reference_text = " ".join(
+        f"{case.get('title', '')} {case.get('content', '')} {case.get('answer', '')}"
+        for case in referenced_cases
+    )
     reference_norm = _normalize(reference_text)
 
     claims = extract_claims(draft_text)
@@ -140,5 +143,6 @@ if __name__ == "__main__":
     result = verify_draft_claims(sample_draft, sample_cases)
     print("검증 안 된 것:", result["unverified_claims"])
     print("검증 된 것:", result["verified_claims"])
+
 
 

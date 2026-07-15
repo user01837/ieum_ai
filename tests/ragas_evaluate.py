@@ -1,4 +1,4 @@
-"""
+﻿"""
 RAGAS 정량 평가 스크립트 (Faithfulness / Context Precision / Context Recall)
 -- ragas>=0.4 collections API 기준 --
 
@@ -24,14 +24,14 @@ import sys
 import requests
 
 DOMAIN_TO_DEPT_CODE = {
-    "교통": "TRAF",
-    "주택·건축": "URBAN",
-    "환경": "ENV",
-    "복지": "WELF",
-    "안전": "SAFETY",
-    "경제·산업": "ECON",
-    "문화·체육·관광": "CULT",
-    "행정·일반": "GEN",
+    "교통": "01",
+    "주택·건축": "02",
+    "환경": "03",
+    "복지": "04",
+    "안전": "05",
+    "경제·산업": "06",
+    "문화·체육·관광": "07",
+    "행정·일반": "08",
 }
 
 
@@ -80,7 +80,7 @@ def collect_samples(goldset: list[dict], base_url: str, limit: int | None):
         if draft is None:
             continue
 
-        retrieved_contexts = [c["document"] for c in referenced] if referenced else []
+        retrieved_contexts = [f"{c['title']}\n{c['content']}" for c in referenced] if referenced else []
         if not retrieved_contexts:
             print("  [주의] 검색된 유사사례 0건 - RAGAS 지표가 왜곡될 수 있음")
 
@@ -207,3 +207,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

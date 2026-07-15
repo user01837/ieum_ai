@@ -14,7 +14,7 @@ class SimilarCasesRequest(BaseModel):
     department_code: str
     top_k: int = 2
     exclude_ids: list[int] = []
-    min_similarity: float | None = None
+    min_similarity: float = 65.0
 
 
 class DraftRequest(BaseModel):
@@ -126,4 +126,7 @@ async def index_complaint(req: IndexComplaintRequest):
         status_code=req.status_code,
     )
     return {"status": "indexed", "complaint_id": req.complaint_id}
+
+
+
 

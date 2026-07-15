@@ -75,7 +75,7 @@ async def classify_text(text: str) -> str:
 async def generate_draft_answer(complaint_text: str, similar_cases: list[dict]) -> str:
     """유사 사례들을 근거로 삼아 답변 초안을 생성."""
     context_block = "\n\n".join(
-        f"[유사사례 {i+1}] {c['document']}" for i, c in enumerate(similar_cases)
+        f"[유사사례 {i+1}] {c['title']}\n{c['content']}" for i, c in enumerate(similar_cases)
     )
     prompt = (
     "다음은 새로 접수된 민원과, 참고할 수 있는 과거 유사 사례입니다. "
@@ -109,3 +109,4 @@ async def generate_draft_answer(complaint_text: str, similar_cases: list[dict]) 
         )
         res.raise_for_status()
     return res.json()["response"].strip()
+
