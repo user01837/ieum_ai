@@ -11,8 +11,8 @@ department_code(부서) 메타데이터로 필터링한 후 벡터 유사도로 
     (가드레일 판단에 쓰이는 similarity 값은 리랭커 점수가 아니라
      기존 임베딩 유사도를 그대로 유지 - 65% 임계값 로직과의 일관성 유지 목적)
 
-주의: 이 모듈은 "저장된 벡터를 검색만 담당한다.
-실제 민원 데이터를 여기 넣는 배치 스크립트는 data/seed_ingest.py 참고 (별도 작성 필요).
+주의: 이 모듈은 저장된 벡터를 검색만 담당한다.
+실제 민원 데이터를 여기 넣는 배치 스크립트는 data/seed_ingest.py 참고.
 """
 import chromadb
 
@@ -52,7 +52,8 @@ def add_complaint(
     domain_code: str | None = None,
     status_code: str | None = None,
 ) -> None:
-    """민원 1건을 벡터화해서 ChromaDB에 저장(이미 있으면 덮어씀)."""
+    """민원 1건을 벡터화해서 ChromaDB에 저장(이미 있으면 덮어씀).
+    domain_code는 통계/분석용 메타데이터로만 저장, 검색 필터링에는 사용 안 함."""
     text = f"{title}\n{content}"
     vector = embed_text(text)
     collection = get_collection()
@@ -93,24 +94,27 @@ def add_complaints_batch(items: list[dict]) -> None:
 def search_similar_complaints(
     query_text: str,
     department_code: str,
-    domain_code: str | None = None,
     top_k: int = 3,
-    rerank_candidates: int = 15,
+    rerank_candidates: int = 20,
+    exclude_ids: list[int] | None = None,
+    min_similarity: float | None = None,
 ) -> list[dict]:
     """
     질문/민원 텍스트와 유사한 과거 민원을 부서 범위 내에서 검색.
-    domain_code를 주면 도메인까지 같이 필터링(분류기와 붙일 때 쓸 예정).
+    (domain_code는 department_code와 1:1 매핑이라 필터링에서 제거함 - 2026-07-14)
+
+    exclude_ids: 이미 보여준 민원 ID 목록 - "유사사례 추가 검색" 시 중복 제외용
+    min_similarity: 지정 시 이 값 미만인 결과는 제외 - "추가 검색"에서 65 이상만 보여줄 때 사용
 
     1) 임베딩 유사도로 rerank_candidates개 후보 확보
-    2) 리랭커로 재정렬
-    3) 상위 top_k개 반환 (similarity 필드는 임베딩 기준값 유지, rerank_score는 참고용 추가)
+    2) exclude_ids / min_similarity로 후보 필터링
+    3) 리랭커로 재정렬
+    4) 상위 top_k개 반환 (필터링 후 결과가 top_k보다 적을 수 있음 - 빈 리스트면 "더 이상 없음")
     """
     collection = get_collection()
     vector = embed_text(query_text)
 
     where = {"department_code": department_code}
-    if domain_code:
-        where = {"$and": [{"department_code": department_code}, {"domain_code": domain_code}]}
 
     result = collection.query(
         query_embeddings=[vector],
@@ -123,11 +127,18 @@ def search_similar_complaints(
     metadatas = result.get("metadatas", [[]])[0]
     distances = result.get("distances", [[]])[0]
 
+    exclude_set = set(exclude_ids) if exclude_ids else set()
+
     candidates = []
     for i in range(len(ids)):
+        complaint_id = metadatas[i].get("complaint_id")
+        if complaint_id in exclude_set:
+            continue
         similarity_pct = round((1 - distances[i]) * 100, 1)
+        if min_similarity is not None and similarity_pct < min_similarity:
+            continue
         candidates.append({
-            "complaint_id": metadatas[i].get("complaint_id"),
+            "complaint_id": complaint_id,
             "document": documents[i],
             "department_code": metadatas[i].get("department_code"),
             "domain_code": metadatas[i].get("domain_code"),
@@ -145,4 +156,3 @@ def search_similar_complaints(
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
     return candidates[:top_k]
-

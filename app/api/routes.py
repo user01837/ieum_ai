@@ -1,7 +1,7 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.classifier.ollama_client import classify_text, generate_draft_answer
+from app.classifier.ollama_client import generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
 from app.vectorstore.chroma_client import search_similar_complaints, add_complaint
@@ -9,25 +9,17 @@ from app.vectorstore.chroma_client import search_similar_complaints, add_complai
 router = APIRouter(prefix="/api", tags=["ai"])
 
 
-class ClassifyRequest(BaseModel):
-    text: str
-
-
-class ClassifyResponse(BaseModel):
-    domain_code: str
-
-
 class SimilarCasesRequest(BaseModel):
     query_text: str
     department_code: str
-    domain_code: str | None = None
-    top_k: int = 3
+    top_k: int = 2
+    exclude_ids: list[int] = []
+    min_similarity: float | None = None
 
 
 class DraftRequest(BaseModel):
     complaint_text: str
     department_code: str
-    domain_code: str | None = None
 
 
 class IndexComplaintRequest(BaseModel):
@@ -43,21 +35,22 @@ class LegalChatRequest(BaseModel):
     question: str
 
 
-@router.post("/classify", response_model=ClassifyResponse)
-async def classify(req: ClassifyRequest):
-    """민원/사업 텍스트를 8개 도메인 중 하나로 분류 (Qwen2.5-3B QLoRA 분류기)."""
-    domain_code = await classify_text(req.text)
-    return ClassifyResponse(domain_code=domain_code)
-
-
 @router.post("/similar-cases")
 async def similar_cases(req: SimilarCasesRequest):
-    """부서 범위 내에서 유사 민원 검색 (ChromaDB 벡터 검색)."""
+    """
+    부서 범위 내에서 유사 민원 검색 (ChromaDB 벡터 검색 + 리랭커).
+
+    최초 호출: exclude_ids/min_similarity 없이 호출 -> 유사도 상위 top_k(기본 2)건 반환
+    "유사사례 추가 검색" 버튼 클릭 시: exclude_ids에 이미 보여준 complaint_id 목록,
+      min_similarity=65.0 전달 -> 중복 제외 + 65% 이상인 것만 반환.
+      결과가 빈 배열이면 더 이상 없다는 뜻 -> 프론트에서 안내 문구 표시 + 버튼 비활성화 처리.
+    """
     hits = search_similar_complaints(
         query_text=req.query_text,
         department_code=req.department_code,
-        domain_code=req.domain_code,
         top_k=req.top_k,
+        exclude_ids=req.exclude_ids,
+        min_similarity=req.min_similarity,
     )
     return {"results": hits}
 
@@ -77,7 +70,6 @@ async def draft_answer(req: DraftRequest):
     similar = search_similar_complaints(
         query_text=req.complaint_text,
         department_code=req.department_code,
-        domain_code=req.domain_code,
         top_k=3,
     )
     draft = await generate_draft_answer(req.complaint_text, similar)
@@ -105,7 +97,7 @@ async def legal_chat(req: LegalChatRequest):
     법률챗봇 - 질문과 관련된 법령 조문을 검색해 근거로 답변 생성.
     우측하단 챗봇 아이콘 전용 엔드포인트 (부서/프로젝트 무관, 전 직원 접근).
 
-    /api/draft와 달리 department_code/domain_code를 받지 않음 - 법률 정보는
+    /api/draft와 달리 department_code를 받지 않음 - 법률 정보는
     부서 구분 없이 전체 법령 코퍼스(legal_documents 컬렉션)에서 검색하기 때문.
     답변 속도를 위해 top_k=2, num_predict=150으로 제한 (legal_chat.py 참고).
     """
@@ -123,6 +115,7 @@ async def index_complaint(req: IndexComplaintRequest):
     """
     완료된 민원 1건을 ChromaDB에 색인(등록).
     FastAPI backend에서 민원이 '완료' 처리될 때 이 엔드포인트를 호출하는 걸 전제로 함.
+    domain_code는 여기서만 유지 - 색인 시 메타데이터(통계/분석용)로 저장, 검색 필터링에는 미사용.
     """
     add_complaint(
         complaint_id=req.complaint_id,
