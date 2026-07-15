@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+﻿from pydantic_settings import BaseSettings
 from pathlib import Path
 
 # 이 파일(config.py) 기준으로 프로젝트 루트를 계산 (app/core/config.py → 두 단계 위 = ieum_ai/)
@@ -15,3 +15,4 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+

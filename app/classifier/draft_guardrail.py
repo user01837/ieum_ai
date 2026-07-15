@@ -140,3 +140,5 @@ if __name__ == "__main__":
     result = verify_draft_claims(sample_draft, sample_cases)
     print("검증 안 된 것:", result["unverified_claims"])
     print("검증 된 것:", result["verified_claims"])
+
+
