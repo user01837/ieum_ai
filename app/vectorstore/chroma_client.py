@@ -51,9 +51,11 @@ def add_complaint(
     department_code: str,
     domain_code: str | None = None,
     status_code: str | None = None,
+    answer: str | None = None,
 ) -> None:
     """민원 1건을 벡터화해서 ChromaDB에 저장(이미 있으면 덮어씀).
-    domain_code는 통계/분석용 메타데이터로만 저장, 검색 필터링에는 사용 안 함."""
+    검색용 벡터는 title+content 기준으로 계산하되,
+    title/content/answer는 각각 메타데이터로 따로 저장해 응답 시 분리 반환 가능하게 함."""
     text = f"{title}\n{content}"
     vector = embed_text(text)
     collection = get_collection()
@@ -63,6 +65,9 @@ def add_complaint(
         documents=[text],
         metadatas=[{
             "complaint_id": complaint_id,
+            "title": title,
+            "content": content,
+            "answer": answer or "",
             "department_code": department_code,
             "domain_code": domain_code or "",
             "status_code": status_code or "",
@@ -73,7 +78,7 @@ def add_complaint(
 def add_complaints_batch(items: list[dict]) -> None:
     """
     여러 건을 한 번에 저장(초기 데이터 적재용).
-    items 각 원소: {"complaint_id", "title", "content", "department_code", "domain_code", "status_code"}
+    items 각 원소: {"complaint_id", "title", "content", "department_code", "domain_code", "status_code", "answer"}
     """
     texts = [f"{it['title']}\n{it['content']}" for it in items]
     vectors = embed_texts(texts)
@@ -84,6 +89,9 @@ def add_complaints_batch(items: list[dict]) -> None:
         documents=texts,
         metadatas=[{
             "complaint_id": it["complaint_id"],
+            "title": it["title"],
+            "content": it["content"],
+            "answer": it.get("answer") or "",
             "department_code": it["department_code"],
             "domain_code": it.get("domain_code") or "",
             "status_code": it.get("status_code") or "",
@@ -109,7 +117,7 @@ def search_similar_complaints(
     1) 임베딩 유사도로 rerank_candidates개 후보 확보
     2) exclude_ids / min_similarity로 후보 필터링
     3) 리랭커로 재정렬
-    4) 상위 top_k개 반환 (필터링 후 결과가 top_k보다 적을 수 있음 - 빈 리스트면 "더 이상 없음")
+    4) 상위 top_k개 반환 (title/content/answer 분리 필드로 응답 - 2026-07-14)
     """
     collection = get_collection()
     vector = embed_text(query_text)
@@ -139,19 +147,23 @@ def search_similar_complaints(
             continue
         candidates.append({
             "complaint_id": complaint_id,
-            "document": documents[i],
+            "title": metadatas[i].get("title", ""),
+            "content": metadatas[i].get("content", ""),
+            "answer": metadatas[i].get("answer", ""),
             "department_code": metadatas[i].get("department_code"),
             "domain_code": metadatas[i].get("domain_code"),
             "status_code": metadatas[i].get("status_code"),
             "similarity": similarity_pct,
+            "_search_text": documents[i],
         })
 
     if not candidates:
         return []
 
-    rerank_scores = rerank(query_text, [c["document"] for c in candidates])
+    rerank_scores = rerank(query_text, [c["_search_text"] for c in candidates])
     for c, score in zip(candidates, rerank_scores):
         c["rerank_score"] = round(score, 4)
+        del c["_search_text"]
 
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 

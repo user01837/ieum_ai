@@ -126,3 +126,4 @@ async def index_complaint(req: IndexComplaintRequest):
         status_code=req.status_code,
     )
     return {"status": "indexed", "complaint_id": req.complaint_id}
+
