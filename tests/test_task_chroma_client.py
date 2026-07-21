@@ -10,6 +10,12 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import tempfile
+import shutil
+
+from app.core.config import settings
+settings.chroma_persist_dir = tempfile.mkdtemp(prefix="task_chroma_test_")
+
 from app.vectorstore.task_chroma_client import add_tasks_batch, search_similar_tasks
 
 SAMPLE_TASKS = [
@@ -71,3 +77,5 @@ assert results_01[0]["collab_department_codes"] == ["05", "08"], f"collab_depart
 print("[통과] 01 부서 검색 결과 1건, collab_department_codes 정상 복원")
 
 print("\n모든 검증 통과")
+
+shutil.rmtree(settings.chroma_persist_dir, ignore_errors=True)
