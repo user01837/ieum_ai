@@ -1,12 +1,55 @@
-﻿from fastapi import APIRouter
+﻿from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.classifier.ollama_client import generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
 from app.vectorstore.chroma_client import search_similar_complaints, add_complaint
+from app.classifier.ollama_client import generate_task_draft
+from app.classifier.draft_guardrail import apply_task_guardrail
+from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
 
 router = APIRouter(prefix="/api", tags=["ai"])
+
+
+VALID_LEAD_DEPARTMENT_CODES = {"01", "02", "03", "04", "05", "06", "07", "08"}
+
+
+def _validate_lead_department_code(code: str) -> None:
+    if code not in VALID_LEAD_DEPARTMENT_CODES:
+        raise HTTPException(status_code=400, detail=f"invalid lead_department_code: {code}")
+
+
+class SimilarTasksRequest(BaseModel):
+    title: str
+    overview: str
+    lead_department_code: str
+    top_k: int = 3
+
+
+class TaskDraftRequest(BaseModel):
+    title: str
+    overview: str
+    lead_department_code: str
+
+
+class IndexTaskRequest(BaseModel):
+    task_id: int
+    year: int
+    title: str
+    lead_department_code: str
+    collab_department_codes: list[str]
+    domain_code: str
+    overview: str
+    background: str
+    goals: str
+    detailed_plan: str
+    schedule: str
+    execution_system: str
+    budget: str
+    expected_effect: str
+    post_management: str
+    status_code: str
 
 
 class SimilarCasesRequest(BaseModel):
@@ -128,5 +171,68 @@ async def index_complaint(req: IndexComplaintRequest):
     return {"status": "indexed", "complaint_id": req.complaint_id}
 
 
+@router.post("/similar-tasks")
+async def similar_tasks(req: SimilarTasksRequest):
+    """
+    주관부서(lead_department_code) 범위 + 완료된 사업만 대상으로 유사 사업 검색.
+    """
+    _validate_lead_department_code(req.lead_department_code)
+    hits = search_similar_tasks(
+        title=req.title,
+        overview=req.overview,
+        lead_department_code=req.lead_department_code,
+        top_k=req.top_k,
+    )
+    return {"results": hits}
 
 
+@router.post("/task-draft")
+async def task_draft(req: TaskDraftRequest):
+    """
+    유사 완료사업을 근거로 사업계획서 9개 섹션 초안 생성.
+
+    가드레일 2단계 적용 (apply_task_guardrail 참고):
+    1) 유사도 가드레일: top1 유사도가 65% 미만이면 9개 필드 전체를 안내 문구로 교체
+    2) 사실 검증 가드레일: budget/schedule에 등장하는 금액·기간이 참고사업 원문에
+       없으면 needs_review=True로 표시
+    """
+    _validate_lead_department_code(req.lead_department_code)
+    similar = search_similar_tasks(
+        title=req.title,
+        overview=req.overview,
+        lead_department_code=req.lead_department_code,
+        top_k=3,
+    )
+
+    try:
+        draft_fields = await generate_task_draft(req.title, req.overview, similar)
+    except ValueError:
+        raise HTTPException(status_code=500, detail="초안 생성에 실패했습니다. 다시 시도해주세요.")
+
+    guarded = apply_task_guardrail(draft_fields, similar, similarity_threshold=65.0)
+
+    return {
+        "draft": guarded["draft"],
+        "referenced_tasks": similar,
+        "guardrail_triggered": guarded["guardrail_triggered"],
+        "needs_review": (
+            guarded["verification"]["has_unverified"]
+            if guarded["verification"] else False
+        ),
+        "unverified_claims": (
+            guarded["verification"]["unverified_claims"]
+            if guarded["verification"] else {}
+        ),
+    }
+
+
+@router.post("/index-task")
+async def index_task(req: IndexTaskRequest):
+    """
+    완료된 사업 1건을 ChromaDB(tasks 컬렉션)에 색인(등록).
+    백엔드에서 사업이 '완료' 처리될 때 이 엔드포인트를 호출하는 걸 전제로 함
+    (기존 /api/index-complaint와 동일한 계약).
+    """
+    _validate_lead_department_code(req.lead_department_code)
+    add_task(req.model_dump())
+    return {"status": "indexed", "task_id": req.task_id, "lead_department_code": req.lead_department_code}
