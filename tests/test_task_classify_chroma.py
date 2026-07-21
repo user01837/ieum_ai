@@ -18,7 +18,7 @@ import shutil
 from app.core.config import settings
 settings.chroma_persist_dir = tempfile.mkdtemp(prefix="task_classify_test_")
 
-from app.vectorstore.chroma_client import add_task, search_matching_task
+from app.vectorstore.chroma_client import add_task_category, search_matching_task_category
 
 SAMPLE_TASKS = [
     {"task_id": 1, "name": "도로시설관리과", "department_code": "01",
@@ -31,11 +31,11 @@ SAMPLE_TASKS = [
 ]
 
 for t in SAMPLE_TASKS:
-    add_task(t["task_id"], t["name"], t["department_code"], t["description"])
+    add_task_category(t["task_id"], t["name"], t["department_code"], t["description"])
 print("샘플 3건 색인 완료\n")
 
 # 검증 1: 부서 필터링 - 01 부서로 검색하면 04 소속(복지시설관리과)은 절대 안 나와야 함
-results = search_matching_task("신호등이 고장났어요", "01", top_k=5)
+results = search_matching_task_category("신호등이 고장났어요", "01", top_k=5)
 assert len(results) > 0, "검색 결과가 0건입니다"
 assert all(r["department_code"] == "01" for r in results), f"부서 필터링 실패: {results}"
 assert all(r["name"] != "복지시설관리과" for r in results), f"타 부서 데이터가 섞여나옴: {results}"
@@ -47,7 +47,7 @@ assert top1["name"] == "교통시설관리과", f"예상과 다른 task가 top1:
 print("[통과] '신호등 고장' → 교통시설관리과로 정확히 매칭")
 
 # 검증 3: top_k=1이면 1건만 반환되고, 응답에 task_id/name/department_code/similarity가 있어야 함
-results_top1 = search_matching_task("아스팔트가 파였어요", "01", top_k=1)
+results_top1 = search_matching_task_category("아스팔트가 파였어요", "01", top_k=1)
 assert len(results_top1) == 1
 top = results_top1[0]
 assert top["name"] == "도로시설관리과", f"예상과 다른 결과: {results_top1}"

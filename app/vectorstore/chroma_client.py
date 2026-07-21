@@ -49,7 +49,7 @@ def get_collection():
     return _collection
 
 
-def get_task_collection():
+def get_task_category_collection():
     global _task_collection
     if _task_collection is None:
         client = get_client()
@@ -186,11 +186,13 @@ def search_similar_complaints(
     return candidates[:top_k]
 
 
-def add_task(task_id: int, name: str, department_code: str, description: str) -> None:
+def add_task_category(task_id: int, name: str, department_code: str, description: str) -> None:
     """부서 내 세부업무(TASK) 1건을 벡터화해서 ChromaDB(task_categories 컬렉션)에 저장.
-    department_code 내에서 task_id가 고유해야 하므로 id는 '{department_code}_{task_id}'로 조합."""
+    department_code 내에서 task_id가 고유해야 하므로 id는 '{department_code}_{task_id}'로 조합.
+    여기서 저장하는 task_id는 AI 서버 내부 벡터 매칭용 임시 ID로, 실제 DB TASK.task_id와
+    다를 수 있다 (data/seed_task_categories.py 주석 참고)."""
     vector = embed_text(description)
-    collection = get_task_collection()
+    collection = get_task_category_collection()
     collection.upsert(
         ids=[f"{department_code}_{task_id}"],
         embeddings=[vector],
@@ -203,14 +205,14 @@ def add_task(task_id: int, name: str, department_code: str, description: str) ->
     )
 
 
-def search_matching_task(complaint_text: str, department_code: str, top_k: int = 1) -> list[dict]:
+def search_matching_task_category(complaint_text: str, department_code: str, top_k: int = 1) -> list[dict]:
     """
     민원 텍스트와 가장 유사한 부서 내 세부업무(TASK)를 검색.
 
     부서당 업무 개수가 적어(6~10개 수준) 리랭커 없이 순수 임베딩 유사도만으로 정렬한다
     (후보군이 이미 전체와 비슷한 규모라 리랭커 효과가 미미함).
     """
-    collection = get_task_collection()
+    collection = get_task_category_collection()
     vector = embed_text(complaint_text)
 
     result = collection.query(

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.classifier.ollama_client import generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
-from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task
+from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category
 from app.classifier.ollama_client import generate_task_draft
 from app.classifier.draft_guardrail import apply_task_guardrail
 from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
@@ -178,9 +178,11 @@ async def index_complaint(req: IndexComplaintRequest):
 
 @router.post("/classify-task")
 async def classify_task(req: ClassifyTaskRequest):
-    """민원 텍스트를 부서 내 세부 업무(Task)로 분류.
-    담당자 배정은 여기서 하지 않음 - task_id만 반환, 백엔드가 TASK_ASSIGNEE 조회해서 배정 처리."""
-    matches = search_matching_task(req.complaint_text, req.department_code, top_k=1)
+    """민원 텍스트를 부서 내 세부 업무과(TASK)로 분류.
+    담당자 배정은 여기서 하지 않음 - task_id만 반환, 백엔드가 TASK_ASSIGNEE 조회해서 배정 처리.
+    여기서 반환하는 task_id는 AI 서버 내부 벡터 매칭용 임시 ID이며, 실제 DB TASK.task_id와의
+    매핑 방식은 백엔드와 별도 협의 필요 (data/seed_task_categories.py 주석 참고)."""
+    matches = search_matching_task_category(req.complaint_text, req.department_code, top_k=1)
     if not matches:
         return {"task_id": None, "task_name": None, "similarity": 0.0}
     top = matches[0]

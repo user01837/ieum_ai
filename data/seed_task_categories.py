@@ -7,9 +7,13 @@
 
 교통부(01) 6개 Task는 data/seed_complaints.py의 교통 도메인 50건을 전수 분류해서
 확정한 카테고리다 (아래 표는 2026-07-21 지시서 기준).
+
+주의: 여기 task_id(1~6)는 AI 서버 내부 벡터 매칭용 임시 ID이며, 실제 DB TASK 테이블에
+INSERT될 때 부여되는 진짜 PK와 다를 수 있다. 백엔드 연동 시 실제 DB task_id와의 매핑
+방식(name+department_code로 매칭 등)을 별도 협의해야 한다.
 """
 
-TASKS = [
+TASK_CATEGORIES = [
     {
         "task_id": 1,
         "name": "도로시설관리과",

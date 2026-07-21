@@ -4,7 +4,7 @@
 
 사전 조건:
     1) FastAPI 서버 실행 중: uvicorn app.main:app --port 8200
-    2) data/seed_task_categories_ingest.py 실행 완료 (교통부 6개 Task 색인 완료)
+    2) data/task_category_ingest.py 실행 완료 (교통부 6개 Task 색인 완료)
 
 8개 케이스 중 최소 6개 이상 정확히 매칭되면 성공.
 
