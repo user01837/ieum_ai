@@ -11,6 +11,8 @@
 """
 import re
 
+from app.vectorstore.task_chroma_client import TASK_FIELDS
+
 
 # ── 1. 답변 텍스트에서 '검증이 필요한 구체적 사실'을 추출하는 패턴들 ──────────
 
@@ -126,6 +128,84 @@ def apply_guardrail(
     verification = verify_draft_claims(draft_text, referenced_cases)
     return {
         "draft": draft_text,
+        "guardrail_triggered": False,
+        "verification": verification,
+    }
+
+
+# ── 사업계획서 초안용 가드레일 (민원용과 별도 함수 - 검증 대상이 다름) ──────────
+
+TASK_FALLBACK_MESSAGE = "참고할 만한 유사 사업이 충분하지 않습니다. 담당자가 직접 작성해주세요."
+
+
+def extract_task_claims(text: str) -> dict[str, list[str]]:
+    """사업계획 초안에서 검증이 필요한 구체적 사실(금액, 기간)만 추출.
+    민원용 extract_claims()와 달리 법조문·퍼센트는 검사하지 않음
+    (내부 참고용 초안이라 법적 근거 검증까지는 불필요하다고 판단)."""
+    claims = {}
+    for category in ("금액", "기간_일수"):
+        matches = PATTERNS[category].findall(text)
+        if matches:
+            claims[category] = list(set(matches))
+    return claims
+
+
+def verify_task_draft_claims(draft_fields: dict, referenced_tasks: list[dict]) -> dict:
+    """
+    draft_fields의 budget, schedule 텍스트에서 추출한 금액/기간이 referenced_tasks의
+    9개 필드(TASK_FIELDS) 원문에 실제로 존재하는지 대조.
+    """
+    reference_text = " ".join(
+        " ".join(str(task.get(field, "")) for field in TASK_FIELDS)
+        for task in referenced_tasks
+    )
+    reference_norm = _normalize(reference_text)
+
+    target_text = f"{draft_fields.get('budget', '')} {draft_fields.get('schedule', '')}"
+    claims = extract_task_claims(target_text)
+
+    unverified = {}
+    verified = {}
+    for category, items in claims.items():
+        unverified_items = [item for item in items if _normalize(item) not in reference_norm]
+        verified_items = [item for item in items if _normalize(item) in reference_norm]
+        if unverified_items:
+            unverified[category] = unverified_items
+        if verified_items:
+            verified[category] = verified_items
+
+    return {
+        "unverified_claims": unverified,
+        "verified_claims": verified,
+        "has_unverified": bool(unverified),
+    }
+
+
+def apply_task_guardrail(
+    draft_fields: dict,
+    referenced_tasks: list[dict],
+    similarity_threshold: float = 65.0,
+) -> dict:
+    """
+    두 단계 가드레일 (apply_guardrail()과 동일한 흐름, 대상만 9개 필드로 확장):
+    1) 유사도 가드레일: top1 유사도가 threshold 미만이면 9개 필드 전체를
+       TASK_FALLBACK_MESSAGE로 교체
+    2) 사실 검증 가드레일: 유사도는 통과했지만 budget/schedule에 검증 안 된 금액/기간이
+       있으면 has_unverified=True로 표시 (draft_fields는 그대로 두고 플래그만 추가)
+    """
+    top1_similarity = referenced_tasks[0]["similarity"] if referenced_tasks else 0.0
+
+    if top1_similarity < similarity_threshold:
+        fallback_fields = {field: TASK_FALLBACK_MESSAGE for field in TASK_FIELDS}
+        return {
+            "draft": fallback_fields,
+            "guardrail_triggered": True,
+            "verification": None,
+        }
+
+    verification = verify_task_draft_claims(draft_fields, referenced_tasks)
+    return {
+        "draft": draft_fields,
         "guardrail_triggered": False,
         "verification": verification,
     }
