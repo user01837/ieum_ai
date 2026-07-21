@@ -2,8 +2,11 @@
 Ollama에 등록된 모델(분류기 handover-classifier, 생성용 llama3.1:8b)을 호출하는 모듈.
 """
 import httpx
+import json
+import re
 
 from app.core.config import settings
+from app.vectorstore.task_chroma_client import TASK_FIELDS
 
 
 DOMAIN_CATEGORIES = ["교통", "주택·건축", "환경", "복지", "안전", "경제·산업", "문화·체육·관광", "행정·일반"]
@@ -109,4 +112,75 @@ async def generate_draft_answer(complaint_text: str, similar_cases: list[dict]) 
         )
         res.raise_for_status()
     return res.json()["response"].strip()
+
+
+def _extract_json_block(raw: str) -> str:
+    """모델 응답에 JSON 앞뒤로 다른 텍스트가 붙어 나올 수 있어 {...} 블록만 추출."""
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        raise ValueError("응답에서 JSON 블록을 찾을 수 없음")
+    return match.group(0)
+
+
+def parse_task_draft_response(raw: str) -> dict:
+    """
+    LLM 원본 응답 문자열을 9개 필드(TASK_FIELDS) dict로 파싱.
+    JSON 파싱 실패, 또는 9개 필드 중 하나라도 없으면 ValueError.
+    """
+    json_block = _extract_json_block(raw)
+    data = json.loads(json_block)
+    missing = [f for f in TASK_FIELDS if f not in data]
+    if missing:
+        raise ValueError(f"응답에 누락된 필드: {missing}")
+    return {field: str(data[field]) for field in TASK_FIELDS}
+
+
+async def generate_task_draft(title: str, overview: str, similar_tasks: list[dict]) -> dict:
+    """유사 완료사업들을 근거로 사업계획서 9개 섹션 초안을 생성.
+    similar_tasks가 빈 리스트여도 호출은 되며(빈 컨텍스트로 생성), 이후 라우터에서
+    apply_task_guardrail이 유사도 0으로 처리해 결과를 안내문으로 대체한다."""
+    context_block = "\n\n".join(
+        f"[참고사업 {i+1}] {t['title']}\n"
+        f"- 개요: {t['overview']}\n"
+        f"- 추진체계: {t['execution_system']}\n"
+        f"- 사후관리: {t['post_management']}\n"
+        f"- 예산: {t['budget']}\n"
+        f"- 일정: {t['schedule']}"
+        for i, t in enumerate(similar_tasks)
+    )
+    prompt = (
+        "다음은 새로 작성해야 할 사업의 사업명·개요와, 참고할 수 있는 과거 유사 완료사업입니다. "
+        "아래 지침을 반드시 지켜 신규 사업 하나에 대한 사업계획서 초안을 작성하세요.\n"
+        "- 반드시 아래 9개 key만 가진 하나의 JSON 객체로만 답하세요. JSON 앞뒤에 다른 설명을 붙이지 마세요.\n"
+        "- key: overview, background, goals, detailed_plan, schedule, execution_system, budget, expected_effect, post_management\n"
+        "- 참고사업의 추진체계(execution_system)와 사후관리(post_management)에 나온 부서 간 협업 방식과 "
+        "시행착오를 적극 활용해서 구체적으로 작성하세요.\n"
+        "- 참고사업에 없는 예산 금액이나 기간을 지어내지 마세요.\n"
+        "- 참고사업 중 관련된 내용이 부족하면, 구체적인 수치를 확정하지 말고 일반적인 절차 위주로 작성하세요.\n\n"
+        f"[신규 사업명]\n{title}\n\n"
+        f"[신규 사업 개요]\n{overview}\n\n"
+        f"[참고 사업]\n{context_block}\n\n"
+        "[JSON 출력]"
+    )
+
+    async def _call_llm() -> str:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(
+                f"{settings.ollama_host}/api/generate",
+                json={
+                    "model": settings.generation_model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2, "num_predict": 800},
+                },
+            )
+            res.raise_for_status()
+        return res.json()["response"].strip()
+
+    raw = await _call_llm()
+    try:
+        return parse_task_draft_response(raw)
+    except ValueError:
+        raw_retry = await _call_llm()
+        return parse_task_draft_response(raw_retry)
 
