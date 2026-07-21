@@ -22,8 +22,13 @@ from app.embeddings.reranker import rerank
 
 _client = None
 _collection = None
+_task_collection = None
 
 COLLECTION_NAME = "complaints"
+# 사업계획서용 task_chroma_client.py가 이미 "tasks" 컬렉션명을 쓰고 있어서
+# (부서01 기준 ID가 "01_1"~"01_30"까지 존재) 이름이 겹치면 upsert 시 서로 덮어쓰게 된다.
+# 그래서 부서 내 세부업무(TASK) 분류용 데이터는 완전히 별도인 이 컬렉션에 저장한다.
+TASK_COLLECTION_NAME = "task_categories"
 
 
 def get_client() -> chromadb.ClientAPI:
@@ -42,6 +47,17 @@ def get_collection():
             metadata={"hnsw:space": "cosine"},
         )
     return _collection
+
+
+def get_task_collection():
+    global _task_collection
+    if _task_collection is None:
+        client = get_client()
+        _task_collection = client.get_or_create_collection(
+            name=TASK_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _task_collection
 
 
 def add_complaint(
@@ -168,3 +184,50 @@ def search_similar_complaints(
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
     return candidates[:top_k]
+
+
+def add_task(task_id: int, name: str, department_code: str, description: str) -> None:
+    """부서 내 세부업무(TASK) 1건을 벡터화해서 ChromaDB(task_categories 컬렉션)에 저장.
+    department_code 내에서 task_id가 고유해야 하므로 id는 '{department_code}_{task_id}'로 조합."""
+    vector = embed_text(description)
+    collection = get_task_collection()
+    collection.upsert(
+        ids=[f"{department_code}_{task_id}"],
+        embeddings=[vector],
+        documents=[description],
+        metadatas=[{
+            "task_id": task_id,
+            "name": name,
+            "department_code": department_code,
+        }],
+    )
+
+
+def search_matching_task(complaint_text: str, department_code: str, top_k: int = 1) -> list[dict]:
+    """
+    민원 텍스트와 가장 유사한 부서 내 세부업무(TASK)를 검색.
+
+    부서당 업무 개수가 적어(6~10개 수준) 리랭커 없이 순수 임베딩 유사도만으로 정렬한다
+    (후보군이 이미 전체와 비슷한 규모라 리랭커 효과가 미미함).
+    """
+    collection = get_task_collection()
+    vector = embed_text(complaint_text)
+
+    result = collection.query(
+        query_embeddings=[vector],
+        n_results=top_k,
+        where={"department_code": department_code},
+    )
+
+    metadatas = result.get("metadatas", [[]])[0]
+    distances = result.get("distances", [[]])[0]
+
+    return [
+        {
+            "task_id": metadatas[i].get("task_id"),
+            "name": metadatas[i].get("name", ""),
+            "department_code": metadatas[i].get("department_code"),
+            "similarity": round((1 - distances[i]) * 100, 1),
+        }
+        for i in range(len(metadatas))
+    ]

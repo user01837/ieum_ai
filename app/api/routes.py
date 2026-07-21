@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.classifier.ollama_client import generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
-from app.vectorstore.chroma_client import search_similar_complaints, add_complaint
+from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task
 from app.classifier.ollama_client import generate_task_draft
 from app.classifier.draft_guardrail import apply_task_guardrail
 from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
@@ -76,6 +76,11 @@ class IndexComplaintRequest(BaseModel):
 
 class LegalChatRequest(BaseModel):
     question: str
+
+
+class ClassifyTaskRequest(BaseModel):
+    complaint_text: str
+    department_code: str
 
 
 @router.post("/similar-cases")
@@ -169,6 +174,17 @@ async def index_complaint(req: IndexComplaintRequest):
         status_code=req.status_code,
     )
     return {"status": "indexed", "complaint_id": req.complaint_id}
+
+
+@router.post("/classify-task")
+async def classify_task(req: ClassifyTaskRequest):
+    """민원 텍스트를 부서 내 세부 업무(Task)로 분류.
+    담당자 배정은 여기서 하지 않음 - task_id만 반환, 백엔드가 TASK_ASSIGNEE 조회해서 배정 처리."""
+    matches = search_matching_task(req.complaint_text, req.department_code, top_k=1)
+    if not matches:
+        return {"task_id": None, "task_name": None, "similarity": 0.0}
+    top = matches[0]
+    return {"task_id": top["task_id"], "task_name": top["name"], "similarity": top["similarity"]}
 
 
 @router.post("/similar-tasks")
