@@ -10,6 +10,10 @@
 
 실행: python tests/test_classify_task_endpoint.py
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 
 BASE_URL = "http://localhost:8200"
@@ -41,3 +45,34 @@ for complaint_text, department_code, expected in CASES:
 print(f"\n{correct}/{len(CASES)} 정확히 매칭됨")
 assert correct >= 6, f"6개 미만 매칭 - 목표 미달 ({correct}/{len(CASES)})"
 print("[통과] 8개 중 6개 이상 매칭 목표 달성")
+
+print("\n" + "=" * 70)
+print("[테스트] /api/index-task-category - 신규 업무과 색인 후 즉시 검색되는지 확인")
+print("-" * 70)
+TEST_TASK_ID = 9999  # 테스트 전용 고정 ID (재실행 시 upsert로 덮어써서 누적 안 됨)
+res = requests.post(f"{BASE_URL}/api/index-task-category", json={
+    "task_id": TEST_TASK_ID,
+    "name": "테스트업무과",
+    "department_code": "01",
+    "description": "테스트용 업무과 설명입니다. 예: 테스트 민원이 들어왔어요.",
+}, timeout=15.0)
+res.raise_for_status()
+assert res.json() == {"status": "indexed", "task_id": TEST_TASK_ID, "department_code": "01"}, res.json()
+print("[통과] 색인 응답 정상")
+
+res = requests.post(f"{BASE_URL}/api/classify-task", json={
+    "complaint_text": "테스트 민원이 들어왔어요", "department_code": "01",
+}, timeout=15.0)
+body = res.json()
+assert body["task_id"] == TEST_TASK_ID and body["task_name"] == "테스트업무과", body
+print("[통과] 색인 직후 신규 업무과가 검색됨:", body)
+
+res = requests.post(f"{BASE_URL}/api/index-task-category", json={
+    "task_id": 1, "name": "x", "department_code": "99", "description": "y",
+}, timeout=10.0)
+assert res.status_code == 400, f"잘못된 department_code인데 400이 아님: {res.status_code}"
+print("[통과] 잘못된 department_code=99 요청에 400 반환")
+
+from app.vectorstore.chroma_client import get_task_category_collection
+get_task_category_collection().delete(ids=["01_9999"])
+print("[정리] 테스트용 업무과 삭제 완료")

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.classifier.ollama_client import generate_draft_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
-from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category
+from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category
 from app.classifier.ollama_client import generate_task_draft
 from app.classifier.draft_guardrail import apply_task_guardrail
 from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
@@ -81,6 +81,13 @@ class LegalChatRequest(BaseModel):
 class ClassifyTaskRequest(BaseModel):
     complaint_text: str
     department_code: str
+
+
+class IndexTaskCategoryRequest(BaseModel):
+    task_id: int
+    name: str
+    department_code: str
+    description: str
 
 
 @router.post("/similar-cases")
@@ -187,6 +194,20 @@ async def classify_task(req: ClassifyTaskRequest):
         return {"task_id": None, "task_name": None, "similarity": 0.0}
     top = matches[0]
     return {"task_id": top["task_id"], "task_name": top["name"], "similarity": top["similarity"]}
+
+
+@router.post("/index-task-category")
+async def index_task_category(req: IndexTaskCategoryRequest):
+    """
+    부서 내 세부업무(TASK) 1건을 ChromaDB(task_categories 컬렉션)에 색인(등록).
+    부서관리자가 실제 DB TASK 테이블에 업무를 새로 만들 때(진짜 task_id가 발급되는 시점)
+    백엔드가 이 엔드포인트를 호출하는 걸 전제로 함 - 그래야 /api/classify-task가 반환하는
+    task_id가 처음부터 실제 DB TASK.task_id와 일치함
+    (기존 /api/index-complaint, /api/index-task와 동일 계약).
+    """
+    _validate_lead_department_code(req.department_code)
+    add_task_category(req.task_id, req.name, req.department_code, req.description)
+    return {"status": "indexed", "task_id": req.task_id, "department_code": req.department_code}
 
 
 @router.post("/similar-tasks")
