@@ -122,6 +122,20 @@ def _extract_json_block(raw: str) -> str:
     return match.group(0)
 
 
+def _stringify_field(value) -> str:
+    """필드 값을 사람이 읽을 수 있는 문자열로 변환.
+    프롬프트에서 문자열만 쓰라고 지시해도 LLM이 리스트/객체로 반환하는 경우가 있어,
+    str()을 그대로 쓰면 파이썬 repr(예: "[{'department': 'x', 'role': 'y'}]")이 그대로
+    노출된다. 그런 값은 사람이 읽을 수 있는 문장 형태로 풀어준다."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return ", ".join(f"{k}: {v}" for k, v in value.items())
+    if isinstance(value, list):
+        return " / ".join(_stringify_field(item) for item in value)
+    return str(value)
+
+
 def parse_task_draft_response(raw: str) -> dict:
     """
     LLM 원본 응답 문자열을 9개 필드(TASK_FIELDS) dict로 파싱.
@@ -132,7 +146,7 @@ def parse_task_draft_response(raw: str) -> dict:
     missing = [f for f in TASK_FIELDS if f not in data]
     if missing:
         raise ValueError(f"응답에 누락된 필드: {missing}")
-    return {field: str(data[field]) for field in TASK_FIELDS}
+    return {field: _stringify_field(data[field]) for field in TASK_FIELDS}
 
 
 async def generate_task_draft(title: str, overview: str, similar_tasks: list[dict]) -> dict:
@@ -153,6 +167,8 @@ async def generate_task_draft(title: str, overview: str, similar_tasks: list[dic
         "아래 지침을 반드시 지켜 신규 사업 하나에 대한 사업계획서 초안을 작성하세요.\n"
         "- 반드시 아래 9개 key만 가진 하나의 JSON 객체로만 답하세요. JSON 앞뒤에 다른 설명을 붙이지 마세요.\n"
         "- key: overview, background, goals, detailed_plan, schedule, execution_system, budget, expected_effect, post_management\n"
+        "- 각 key의 값은 반드시 하나의 문자열(string)이어야 합니다. 리스트나 중첩 객체로 작성하지 말고, "
+        "여러 항목이 필요하면 한 문자열 안에서 문장이나 번호로 구분해서 쓰세요.\n"
         "- 참고사업의 추진체계(execution_system)와 사후관리(post_management)에 나온 부서 간 협업 방식과 "
         "시행착오를 적극 활용해서 구체적으로 작성하세요.\n"
         "- 참고사업에 없는 예산 금액이나 기간을 지어내지 마세요.\n"
