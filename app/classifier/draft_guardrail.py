@@ -98,9 +98,8 @@ def apply_guardrail(
     referenced_cases: list[dict],
     similarity_threshold: float = 65.0,
     fallback_message: str = (
-        "안녕하십니까. 귀하께서 제기하신 민원에 대해 검토 중입니다. "
-        "관련 유사사례가 충분히 확인되지 않아, 담당자가 현장 확인 후 "
-        "구체적인 절차를 안내드리도록 하겠습니다."
+        "유사 사례가 충분히 확인되지 않아 AI 초안을 생성하지 못했습니다. "
+        "담당자가 현장 확인 후 직접 답변을 작성해 주세요."
     ),
 ) -> dict:
     """
@@ -223,6 +222,4 @@ if __name__ == "__main__":
     result = verify_draft_claims(sample_draft, sample_cases)
     print("검증 안 된 것:", result["unverified_claims"])
     print("검증 된 것:", result["verified_claims"])
-
-
 
