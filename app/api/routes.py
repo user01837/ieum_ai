@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.classifier.ollama_client import generate_draft_answer
+from app.classifier.ollama_client import generate_draft_answer, classify_text, domain_name_to_department_code
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
 from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category
@@ -62,6 +62,15 @@ class SimilarCasesRequest(BaseModel):
 
 class DraftRequest(BaseModel):
     complaint_text: str
+    department_code: str
+
+
+class ClassifyDepartmentRequest(BaseModel):
+    title: str
+    content: str
+
+
+class ClassifyDepartmentResponse(BaseModel):
     department_code: str
 
 
@@ -144,6 +153,17 @@ async def draft_answer(req: DraftRequest):
             if guarded["verification"] else {}
         ),
     }
+
+
+@router.post("/classify-department", response_model=ClassifyDepartmentResponse)
+async def classify_department(req: ClassifyDepartmentRequest):
+    """
+    민원 제목+내용으로 부서(01~08)를 자동 분류.
+    ieum_backend의 외부 민원 접수 API(POST /petitions/external)가 사용한다.
+    """
+    domain_name = await classify_text(f"{req.title}\n{req.content}")
+    department_code = domain_name_to_department_code(domain_name)
+    return ClassifyDepartmentResponse(department_code=department_code)
 
 
 @router.post("/legal-chat")
