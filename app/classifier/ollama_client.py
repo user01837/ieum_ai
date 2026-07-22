@@ -12,6 +12,16 @@ from app.classifier.draft_html import render_field_html
 
 DOMAIN_CATEGORIES = ["교통", "주택·건축", "환경", "복지", "안전", "경제·산업", "문화·체육·관광", "행정·일반"]
 
+
+def domain_name_to_department_code(domain_name: str) -> str:
+    """DOMAIN_CATEGORIES 순서가 부서 코드 01~08 순서와 동일하다는 점을 이용한 매핑.
+    classify_text()의 내부 _extract_category()가 항상 8개 이름 중 하나만 반환하도록
+    보장하지만, 이 함수는 그 계약이 깨지는 경우에도 안전하게 '08'(행정·일반)로 열화된다."""
+    if domain_name not in DOMAIN_CATEGORIES:
+        return "08"
+    return f"{DOMAIN_CATEGORIES.index(domain_name) + 1:02d}"
+
+
 # 파인튜닝 학습 데이터의 instruction과 완전히 동일한 문구.
 # (한 글자라도 다르면 모델이 학습 때 본 패턴과 어긋나므로 임의로 수정 금지)
 CLASSIFY_INSTRUCTION = (
