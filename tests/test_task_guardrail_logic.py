@@ -38,12 +38,13 @@ assert "금액" in result2["unverified_claims"], result2
 assert result2["has_unverified"] is True, result2
 print("[통과] 참고사업에 없는 금액은 unverified_claims로 분류")
 
-# 케이스 3: apply_task_guardrail - 유사도 낮으면 9개 필드 전체가 fallback으로 교체
+# 케이스 3: apply_task_guardrail - 유사도 낮으면 9개 필드 전체가 fallback으로 교체(<p> HTML로 감싸짐)
 low_sim_tasks = [{**REFERENCE_TASKS[0], "similarity": 40.0}]
 guarded_low = apply_task_guardrail(draft2, low_sim_tasks, similarity_threshold=65.0)
 assert guarded_low["guardrail_triggered"] is True, guarded_low
-assert all(v == TASK_FALLBACK_MESSAGE for v in guarded_low["draft"].values()), guarded_low["draft"]
-print("[통과] 유사도 미달 시 9개 필드 전체가 fallback 문구로 교체")
+expected_fallback_html = f"<p>{TASK_FALLBACK_MESSAGE}</p>"
+assert all(v == expected_fallback_html for v in guarded_low["draft"].values()), guarded_low["draft"]
+print("[통과] 유사도 미달 시 9개 필드 전체가 fallback 문구(HTML)로 교체")
 
 # 케이스 4: apply_task_guardrail - 유사도 충분하면 draft 그대로 + 검증 결과 포함
 high_sim_tasks = [{**REFERENCE_TASKS[0], "similarity": 80.0}]

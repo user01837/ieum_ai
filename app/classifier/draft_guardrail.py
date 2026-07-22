@@ -12,6 +12,7 @@
 import re
 
 from app.vectorstore.task_chroma_client import TASK_FIELDS
+from app.classifier.draft_html import render_field_html
 
 
 # ── 1. 답변 텍스트에서 '검증이 필요한 구체적 사실'을 추출하는 패턴들 ──────────
@@ -195,7 +196,8 @@ def apply_task_guardrail(
     top1_similarity = referenced_tasks[0]["similarity"] if referenced_tasks else 0.0
 
     if top1_similarity < similarity_threshold:
-        fallback_fields = {field: TASK_FALLBACK_MESSAGE for field in TASK_FIELDS}
+        fallback_html = render_field_html(TASK_FALLBACK_MESSAGE)
+        fallback_fields = {field: fallback_html for field in TASK_FIELDS}
         return {
             "draft": fallback_fields,
             "guardrail_triggered": True,
