@@ -7,6 +7,7 @@ import re
 
 from app.core.config import settings
 from app.vectorstore.task_chroma_client import TASK_FIELDS
+from app.classifier.draft_html import render_field_html
 
 
 DOMAIN_CATEGORIES = ["교통", "주택·건축", "환경", "복지", "안전", "경제·산업", "문화·체육·관광", "행정·일반"]
@@ -140,13 +141,17 @@ def parse_task_draft_response(raw: str) -> dict:
     """
     LLM 원본 응답 문자열을 9개 필드(TASK_FIELDS) dict로 파싱.
     JSON 파싱 실패, 또는 9개 필드 중 하나라도 없으면 ValueError.
+    각 필드 값은 render_field_html()을 거쳐 h3/p 구조의 HTML 문자열로 변환된다.
     """
     json_block = _extract_json_block(raw)
     data = json.loads(json_block)
     missing = [f for f in TASK_FIELDS if f not in data]
     if missing:
         raise ValueError(f"응답에 누락된 필드: {missing}")
-    return {field: _stringify_field(data[field]) for field in TASK_FIELDS}
+    return {
+        field: render_field_html(_stringify_field(data[field]))
+        for field in TASK_FIELDS
+    }
 
 
 async def generate_task_draft(title: str, overview: str, similar_tasks: list[dict]) -> dict:
@@ -167,8 +172,14 @@ async def generate_task_draft(title: str, overview: str, similar_tasks: list[dic
         "아래 지침을 반드시 지켜 신규 사업 하나에 대한 사업계획서 초안을 작성하세요.\n"
         "- 반드시 아래 9개 key만 가진 하나의 JSON 객체로만 답하세요. JSON 앞뒤에 다른 설명을 붙이지 마세요.\n"
         "- key: overview, background, goals, detailed_plan, schedule, execution_system, budget, expected_effect, post_management\n"
-        "- 각 key의 값은 반드시 하나의 문자열(string)이어야 합니다. 리스트나 중첩 객체로 작성하지 말고, "
-        "여러 항목이 필요하면 한 문자열 안에서 문장이나 번호로 구분해서 쓰세요.\n"
+        "- 각 key의 값은 반드시 하나의 문자열(string)이어야 합니다. 리스트나 중첩 객체로 작성하지 마세요.\n"
+        "- 값 안에서 여러 항목을 나열할 때는 '1) 2) 3)' 같은 번호 대신, 줄마다 '- '로 시작해서 한 줄에 "
+        "하나씩 쓰세요(JSON 문자열 안이므로 줄바꿈은 \\n으로 표현하세요).\n"
+        "- HTML 태그(<, > 같은 것)는 절대 쓰지 마세요. 일반 텍스트와 '- ' 목록만 쓰세요.\n"
+        "- background(추진 배경 및 필요성) 항목만 아래 형식처럼 '## 추진 배경'과 '## 사업 필요성' 두 "
+        "소제목으로 나눠서, 각 소제목 아래에 '- '로 시작하는 항목을 2~3개씩 쓰세요. 예시:\n"
+        "  ## 추진 배경\\n- (현재 업무에서 발견된 구체적 문제)\\n- (그로 인한 불편이나 민원)\\n\\n"
+        "  ## 사업 필요성\\n- (이 사업으로 얻는 행정적 효과)\\n- (이 사업으로 얻는 시민 편익)\n"
         "- 참고사업의 추진체계(execution_system)와 사후관리(post_management)에 나온 부서 간 협업 방식과 "
         "시행착오를 적극 활용해서 구체적으로 작성하세요.\n"
         "- 참고사업에 없는 예산 금액이나 기간을 지어내지 마세요.\n"
