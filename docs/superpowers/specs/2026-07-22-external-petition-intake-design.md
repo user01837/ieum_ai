@@ -50,7 +50,7 @@
 - **인증**: 요청 헤더 `X-API-Key`를 신규 설정값 `settings.EXTERNAL_PETITION_API_KEY`(환경변수, `.env.local`)와 비교. 불일치/누락 시 `401`.
 - **Request**: `{"title": str, "content": str}` (Petition 모델의 필수 필드와 동일 — 그 외 필드는 전부 nullable이라 안 받아도 됨)
 - **처리 순서**:
-  1. `httpx.AsyncClient(timeout=15.0)`로 `{settings.AI_SERVER}/api/classify-department` 호출 (기존 `_call_ai_to_index_petition`과 같은 `settings.AI_SERVER` 설정 재사용)
+  1. `httpx.AsyncClient(timeout=60.0)`로 `{settings.AI_SERVER}/api/classify-department` 호출 (기존 `_call_ai_to_index_petition`과 같은 `settings.AI_SERVER` 설정 재사용). `classify_text`(`ollama_client.py`) 자체가 Ollama 호출에 10초 내부 타임아웃을 걸고 있는데, 여기에 네트워크 왕복·FastAPI 오버헤드·콜드스타트 여유를 넉넉히 얹어 60초로 잡는다 (task-draft 타임아웃이 이론치보다 실측이 더 걸려서 겪었던 것과 같은 문제를 미리 방지).
   2. 성공하면 응답의 `department_code` 사용. 실패(연결 오류/타임아웃/4xx/5xx 무엇이든)하면 `"08"`(행정·일반)로 폴백 — **민원 접수 자체는 절대 막지 않는다.**
   3. `Petition(title=req.title, content=req.content, department_code=department_code, status_code="01", received_at=datetime.now())` 생성 후 `db.add` + `db.commit`
 - **Response**: `{"petitionId": int, "departmentCode": str}`
