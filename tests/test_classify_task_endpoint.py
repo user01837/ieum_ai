@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
 
-BASE_URL = "http://localhost:8200"
+BASE_URL = "http://localhost:8100"
 
 CASES = [
     ("아스팔트가 파여서 위험합니다", "01", "도로시설관리과"),
