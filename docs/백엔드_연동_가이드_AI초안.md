@@ -106,7 +106,7 @@ async def get_ai_draft(
         raise HTTPException(status_code=404, detail="존재하지 않는 프로젝트입니다.")
 
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=280.0) as client:
             res = await client.post(
                 f"{AI_SERVER_BASE_URL}/api/task-draft",
                 json={
@@ -130,8 +130,15 @@ async def get_ai_draft(
 
 체크할 점:
 
-- **타임아웃**: 실측 최대 2분 17초까지 걸렸다 (`API_명세서.md`의 "실측 최대 103초"보다 더 걸린 사례 있음 — HTML 마크다운 지시문이 추가되며 프롬프트가 길어진 영향으로 보임). `httpx.AsyncClient(timeout=180.0)` 이상 권장, 프론트 쪽 로딩 UI도 이 시간을 버틸 수 있어야 함.
-- **`lead_department_code`**: `project.department_code`가 `01`~`08`이 아니면 `ieum_ai`가 `400`을 반환한다. 프로젝트에 부서코드가 비어있는 케이스를 먼저 걸러줄 것.
+- **타임아웃 (중요, 실제로 500 재현됨)**: `ieum_ai`가 2026-07-22에 내부 Ollama 호출 타임아웃을 120초 → **240초**로 올렸다(`app/classifier/ollama_client.py`, 커밋 `2805d6a`). 기존 120초로는 실측 생성시간(137~139초)을 못 버텨서 `httpx.ReadTimeout` → 처리되지 않은 예외 → `ieum_ai`가 **500 Internal Server Error**를 그대로 반환하는 게 실제로 재현됐었다 (curl로 `/api/task-draft` 직접 호출해도 동일하게 발생 — 백엔드/네트워크 문제 아니었음). 최신 `ieum_ai` 코드를 pull 받았는지 먼저 확인할 것. 그리고 백엔드가 `ieum_ai`를 호출하는 타임아웃은 `ieum_ai` 내부 240초보다 반드시 더 길게(위 예시처럼 280초 이상) 잡을 것 — 안 그러면 `ieum_ai`가 아직 처리 중인데 백엔드가 먼저 포기해서 이번엔 502로 보인다.
+- **`lead_department_code`**: `project.department_code`가 `01`~`08`이 아니면(`09`=관리자 포함) `ieum_ai`가 `400`을 반환한다. `None`이면 `ieum_ai`가 `422`를 반환한다(둘 다 확인됨, 500 아님). 아래 가드로 먼저 걸러줄 것:
+
+```python
+if not project.department_code or project.department_code == "09":
+    raise HTTPException(status_code=422, detail="AI 초안은 관리자 부서가 아닌 프로젝트에서만 지원됩니다.")
+```
+
+  "관리자(09) 부서 프로젝트도 AI 초안을 지원할지"는 코드 버그가 아니라 별도 정책 결정이 필요한 사안 — 지원하려면 `ieum_ai`에 관리자용 도메인/시드 데이터를 새로 만드는 작업이 추가로 필요하다.
 - **`guardrail_triggered` / `needs_review`**: 지금 제안 코드는 이 두 플래그를 버리고 있다. 프론트에 "AI가 참고 사업을 못 찾았습니다" 안내나 "재검토 필요" 배지를 보여줄 계획이면 `AiDraftResponse`에 필드를 추가해서 같이 내려줘야 한다 (지금은 범위 밖으로 뒀다 — 필요하면 알려달라).
 - **에러 응답**: `ieum_ai` 자체가 다운돼있으면 `httpx.HTTPError`를 잡아 `502`로 변환하도록 위 예시에 넣어뒀다. 원래 프론트에서 봤던 502(Vite 프록시발)와는 다른, "AI 서버가 응답 안 함"을 명확히 구분하는 502다.
 
