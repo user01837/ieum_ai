@@ -191,7 +191,7 @@ async def generate_task_draft(title: str, overview: str, similar_tasks: list[dic
     )
 
     async def _call_llm() -> str:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=240.0) as client:
             res = await client.post(
                 f"{settings.ollama_host}/api/generate",
                 json={
