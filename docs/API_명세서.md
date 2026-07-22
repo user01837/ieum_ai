@@ -28,6 +28,7 @@
 - **유사도 기본값**: `/api/similar-cases`의 `min_similarity` 기본값이 `65.0`으로 적용됨
 - **Fallback 문구**: 민원 초안(`/api/draft`) fallback 안내문구가 격식체 장문에서 짧은 안내문("AI 초안을 생성하지 못했습니다…")으로 변경됨 — 사업계획서 쪽과 톤 통일
 - **신규 엔드포인트**: `/api/classify-task`, `/api/index-task-category` 추가 (부서 내 세부업무 자동 분류)
+- **`/api/task-draft` 응답 형식**: `draft`의 9개 필드 값이 평문에서 `<h3>`/`<p>` HTML로 변경됨. `background` 필드는 `<h3>추진 배경</h3>` / `<h3>사업 필요성</h3>` 두 소제목으로 분리되어 옴. 백엔드 연동 상세는 [`백엔드_연동_가이드_AI초안.md`](./백엔드_연동_가이드_AI초안.md) 참고
 
 ---
 
@@ -194,10 +195,16 @@
 
 **Response — draft 9개 필드**: `overview · background · goals · detailed_plan · schedule · execution_system · budget · expected_effect · post_management`
 
+> **값 형식이 HTML임** (2026-07-22부터): 각 필드는 `<h3>`/`<p>` 태그를 포함한 HTML 문자열. `background`만 `<h3>추진 배경</h3>` / `<h3>사업 필요성</h3>` 두 소제목으로 분리되어 옴. 프론트가 이 값을 그대로 Tiptap에 주입/렌더링하는 걸 전제로 함.
+
 ```json
 // Response 200
 {
-  "draft": { "overview": "...", "background": "...", "...": "..." },
+  "draft": {
+    "overview": "<p>노후 버스승강장을 저상화하여 교통약자 접근성을 개선하는 사업입니다.</p>",
+    "background": "<h3>추진 배경</h3>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;□ 노후 버스승강장이 많아 교통약자 이용이 어려움</p>\n<h3>사업 필요성</h3>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;□ 저상버스 승강장 설치로 이동 편의 향상</p>",
+    "...": "<p>...</p>"
+  },
   "referenced_tasks": [ "..." ],
   "guardrail_triggered": false,
   "needs_review": true,
@@ -205,11 +212,11 @@
 }
 ```
 
-> **응답 지연**: 실측 최대 103초. 타임아웃 120~180초 권장.
+> **응답 지연**: 실측 최대 2분 17초 (HTML 마크다운 지시문이 추가되며 프롬프트가 길어져 기존 103초보다 늘어남). 타임아웃 180초 이상 권장.
 >
 > **lead_department_code**가 01~08이 아니면 `400` 에러.
 >
-> **guardrail_triggered=true**면 9개 필드 전부 "참고할 만한 유사 사업이 충분하지 않습니다. 담당자가 직접 작성해주세요."로 대체됨 (top1 유사도 65% 미만일 때).
+> **guardrail_triggered=true**면 9개 필드 전부 "참고할 만한 유사 사업이 충분하지 않습니다. 담당자가 직접 작성해주세요."로 대체됨 (top1 유사도 65% 미만일 때, `<p>` HTML로 감싸져서 옴).
 
 ### `POST /api/index-task`
 완료 사업 색인. 사업이 "완료" 처리될 때 백엔드가 호출. (기존 index-complaint와 동일 계약)
