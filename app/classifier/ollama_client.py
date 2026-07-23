@@ -133,6 +133,36 @@ def _extract_json_block(raw: str) -> str:
     return match.group(0)
 
 
+def _sanitize_json_string_content(text: str) -> str:
+    """LLM이 JSON 문자열 값 안에 여러 줄(예: '- ' 목록)을 넣을 때, 프롬프트에서 개행을
+    \\n으로 이스케이프하라고 지시해도 실제 개행 문자를 그대로 넣는 경우가 잦다. JSON 표준상
+    문자열 리터럴 안의 raw 개행/탭은 허용되지 않아 json.loads()가 "Invalid control
+    character"로 실패하므로, 문자열 리터럴 내부에서만 개행/탭/캐리지리턴을 이스케이프
+    시퀀스로 치환해 파싱 가능하게 만든다. 문자열 밖(JSON 구조 사이 공백)은 건드리지 않는다."""
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+        elif ch == "\\":
+            result.append(ch)
+            escape_next = True
+        elif ch == '"':
+            in_string = not in_string
+            result.append(ch)
+        elif in_string and ch == "\n":
+            result.append("\\n")
+        elif in_string and ch == "\r":
+            result.append("\\r")
+        elif in_string and ch == "\t":
+            result.append("\\t")
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
 def _stringify_field(value) -> str:
     """필드 값을 사람이 읽을 수 있는 문자열로 변환.
     프롬프트에서 문자열만 쓰라고 지시해도 LLM이 리스트/객체로 반환하는 경우가 있어,
@@ -154,6 +184,7 @@ def parse_task_draft_response(raw: str) -> dict:
     각 필드 값은 render_field_html()을 거쳐 h3/p 구조의 HTML 문자열로 변환된다.
     """
     json_block = _extract_json_block(raw)
+    json_block = _sanitize_json_string_content(json_block)
     data = json.loads(json_block)
     missing = [f for f in TASK_FIELDS if f not in data]
     if missing:

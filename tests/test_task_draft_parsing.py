@@ -89,6 +89,19 @@ assert result6["background"] == (
 ), result6["background"]
 print("[통과] background 필드의 ## 소제목이 h3/p로 세분화 변환됨")
 
+# 케이스 7: LLM이 문자열 값 안에 \n 대신 실제 개행 문자를 그대로 넣는 경우
+# (실사용 중 재현된 패턴 - json.loads()가 "Invalid control character"로 실패하던 원인)
+RAW_NEWLINE_IN_STRING = (
+    '{"overview": "o", "background": "b", "goals": "g", "detailed_plan": "d", '
+    '"schedule": "s", "execution_system": "e", "budget": "1000만원", '
+    '"expected_effect": "ef", '
+    '"post_management": "- 시스템 운영 및 관리\n- 결과 평가 및 분석"}'
+)
+result7 = parse_task_draft_response(RAW_NEWLINE_IN_STRING)
+assert "시스템 운영 및 관리" in result7["post_management"], result7["post_management"]
+assert "결과 평가 및 분석" in result7["post_management"], result7["post_management"]
+print("[통과] 문자열 값 안의 이스케이프 안 된 개행도 정상 파싱됨:", result7["post_management"])
+
 # _stringify_field 자체 동작도 직접 확인
 assert _stringify_field("plain") == "plain"
 assert _stringify_field({"a": 1, "b": 2}) == "a: 1, b: 2"
