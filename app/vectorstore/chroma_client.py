@@ -205,6 +205,14 @@ def add_task_category(task_id: int, name: str, department_code: str, description
     )
 
 
+def remove_task_category(task_id: int, department_code: str) -> None:
+    """부서 내 세부업무(TASK) 1건을 ChromaDB(task_categories 컬렉션)에서 삭제.
+    add_task_category와 동일한 id 규칙('{department_code}_{task_id}')을 사용한다.
+    존재하지 않는 id를 지워도 ChromaDB는 예외를 던지지 않는다(멱등)."""
+    collection = get_task_category_collection()
+    collection.delete(ids=[f"{department_code}_{task_id}"])
+
+
 def search_matching_task_category(complaint_text: str, department_code: str, top_k: int = 1) -> list[dict]:
     """
     민원 텍스트와 가장 유사한 부서 내 세부업무(TASK)를 검색.

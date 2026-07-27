@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.classifier.ollama_client import generate_draft_answer, classify_text, domain_name_to_department_code
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
-from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category
+from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category, remove_task_category
 from app.classifier.ollama_client import generate_task_draft
 from app.classifier.draft_guardrail import apply_task_guardrail
 from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
@@ -228,6 +228,18 @@ async def index_task_category(req: IndexTaskCategoryRequest):
     _validate_lead_department_code(req.department_code)
     add_task_category(req.task_id, req.name, req.department_code, req.description)
     return {"status": "indexed", "task_id": req.task_id, "department_code": req.department_code}
+
+
+@router.delete("/task-category/{department_code}/{task_id}")
+async def delete_task_category(department_code: str, task_id: int):
+    """
+    세부업무(TASK) 삭제 시 ChromaDB 색인도 함께 제거.
+    ieum_backend가 delete_task 처리(DB 삭제 커밋) 이후에 이 엔드포인트를 호출하는 것을
+    전제로 함. 색인이 없던 task_id를 지워도 에러 없이 통과한다.
+    """
+    _validate_lead_department_code(department_code)
+    remove_task_category(task_id, department_code)
+    return {"status": "deleted", "task_id": task_id, "department_code": department_code}
 
 
 @router.post("/similar-tasks")
