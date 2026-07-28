@@ -81,6 +81,7 @@ class IndexComplaintRequest(BaseModel):
     department_code: str
     domain_code: str | None = None
     status_code: str | None = None
+    received_date: str | None = None
 
 
 class LegalChatRequest(BaseModel):
@@ -199,6 +200,7 @@ async def index_complaint(req: IndexComplaintRequest):
         department_code=req.department_code,
         domain_code=req.domain_code,
         status_code=req.status_code,
+        received_date=req.received_date,
     )
     return {"status": "indexed", "complaint_id": req.complaint_id}
 

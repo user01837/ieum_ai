@@ -68,6 +68,7 @@ def add_complaint(
     domain_code: str | None = None,
     status_code: str | None = None,
     answer: str | None = None,
+    received_date: str | None = None,
 ) -> None:
     """민원 1건을 벡터화해서 ChromaDB에 저장(이미 있으면 덮어씀).
     검색용 벡터는 title+content 기준으로 계산하되,
@@ -87,6 +88,7 @@ def add_complaint(
             "department_code": department_code,
             "domain_code": domain_code or "",
             "status_code": status_code or "",
+            "received_date": received_date or "",
         }],
     )
 
@@ -94,7 +96,7 @@ def add_complaint(
 def add_complaints_batch(items: list[dict]) -> None:
     """
     여러 건을 한 번에 저장(초기 데이터 적재용).
-    items 각 원소: {"complaint_id", "title", "content", "department_code", "domain_code", "status_code", "answer"}
+    items 각 원소: {"complaint_id", "title", "content", "department_code", "domain_code", "status_code", "answer", "received_date"}
     """
     texts = [f"{it['title']}\n{it['content']}" for it in items]
     vectors = embed_texts(texts)
@@ -111,6 +113,7 @@ def add_complaints_batch(items: list[dict]) -> None:
             "department_code": it["department_code"],
             "domain_code": it.get("domain_code") or "",
             "status_code": it.get("status_code") or "",
+            "received_date": it.get("received_date") or "",
         } for it in items],
     )
 
@@ -169,6 +172,7 @@ def search_similar_complaints(
             "department_code": metadatas[i].get("department_code"),
             "domain_code": metadatas[i].get("domain_code"),
             "status_code": metadatas[i].get("status_code"),
+            "received_date": metadatas[i].get("received_date") or None,
             "similarity": similarity_pct,
             "_search_text": documents[i],
         })

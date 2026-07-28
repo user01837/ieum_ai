@@ -22,6 +22,7 @@ def main():
             "domain_code": c["domain_code"],
             "status_code": c["status_code"],
             "answer": c.get("answer", ""),
+            "received_date": c.get("received_date", ""),
         }
         for c in COMPLAINTS
     ]
