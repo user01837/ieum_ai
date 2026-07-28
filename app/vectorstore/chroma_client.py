@@ -134,9 +134,15 @@ def search_similar_complaints(
     min_similarity: 지정 시 이 값 미만인 결과는 제외 - "추가 검색"에서 65 이상만 보여줄 때 사용
 
     1) 임베딩 유사도로 rerank_candidates개 후보 확보
-    2) exclude_ids / min_similarity로 후보 필터링
-    3) 리랭커로 재정렬
+    2) exclude_ids / min_similarity로 후보 필터링 (min_similarity는 이 임베딩 유사도 기준)
+    3) 리랭커로 재정렬 (최종 순서는 rerank_score 기준 - 아래 참고)
     4) 상위 top_k개 반환 (title/content/answer 분리 필드로 응답 - 2026-07-14)
+
+    주의: 응답의 "similarity"(임베딩 유사도 %)와 실제 정렬 기준인 "rerank_score"는
+    서로 다른 모델의 점수라 순서가 어긋날 수 있음(예: similarity 69%인 항목이
+    similarity 72%인 항목보다 위에 올 수 있음) - 의도된 동작. 리랭커가 임베딩
+    유사도보다 더 정확한 관련성 판단을 한다고 보고 최종 정렬은 rerank_score를
+    쓰기로 결정함(2026-07-28). similarity는 참고용 지표로만 노출.
     """
     collection = get_collection()
     vector = embed_text(query_text)
