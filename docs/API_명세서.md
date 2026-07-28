@@ -1,6 +1,6 @@
 # 공공이음 AI 서버 API 명세
 
-공무원 인사이동 시 업무 인수인계를 돕는 AI 서비스의 백엔드 연동 문서. 모든 엔드포인트는 `POST`이며, prefix `/api`가 붙습니다.
+공무원 인사이동 시 업무 인수인계를 돕는 AI 서비스의 백엔드 연동 문서. 모든 엔드포인트에 prefix `/api`가 붙습니다. 대부분 `POST`이며, 삭제류(`/task-category`) 딱 하나만 `DELETE`입니다.
 
 - **Base URL**: `http://<host>:8100`
 - **인증**: 없음 (내부망 전용)
@@ -15,7 +15,7 @@
 - 민원 초안: [`/similar-cases`](#post-apisimilar-cases) · [`/draft`](#post-apidraft) · [`/index-complaint`](#post-apiindex-complaint)
 - 법률 QA: [`/legal-chat`](#post-apilegal-chat)
 - 사업계획서 초안: [`/similar-tasks`](#post-apisimilar-tasks) · [`/task-draft`](#post-apitask-draft) · [`/index-task`](#post-apiindex-task)
-- TASK 분류(신규): [`/classify-task`](#post-apiclassify-task) · [`/index-task-category`](#post-apiindex-task-category)
+- 부서·업무 자동 분류: [`/classify-department`](#post-apiclassify-department) · [`/classify-task`](#post-apiclassify-task) · [`/index-task-category`](#post-apiindex-task-category) · [`DELETE /task-category`](#delete-apitask-categorydepartment_codetask_id)
 
 ---
 
@@ -29,6 +29,8 @@
 - **Fallback 문구**: 민원 초안(`/api/draft`) fallback 안내문구가 격식체 장문에서 짧은 안내문("AI 초안을 생성하지 못했습니다…")으로 변경됨 — 사업계획서 쪽과 톤 통일
 - **신규 엔드포인트**: `/api/classify-task`, `/api/index-task-category` 추가 (부서 내 세부업무 자동 분류)
 - **`/api/task-draft` 응답 형식**: `draft`의 9개 필드 값이 평문에서 `<h3>`/`<p>` HTML로 변경됨. `background` 필드는 `<h3>추진 배경</h3>` / `<h3>사업 필요성</h3>` 두 소제목으로 분리되어 옴. 백엔드 연동 상세는 [`백엔드_연동_가이드_AI초안.md`](./백엔드_연동_가이드_AI초안.md) 참고
+- **(2026-07-27) `DELETE /api/task-category/{department_code}/{task_id}` 신규**: 업무 삭제 시 벡터DB 색인도 함께 제거. `/api/index-task-category`와 정확히 대칭. 아래 "Delete API는 없음" 문구는 폐기됨
+- **(2026-07-27) `/api/classify-department` 명세 보강**: 부서 자동분류 엔드포인트 자체는 이전에 부활했으나 이 문서에 누락되어 있었음 — 아래 섹션으로 정식 추가
 
 ---
 
@@ -239,7 +241,29 @@
 
 ---
 
-## TASK 분류 (신규)
+## 부서·업무 자동 분류
+
+### `POST /api/classify-department`
+민원 제목+내용으로 부서(01~08)를 자동 분류. `ieum_backend`의 외부 민원 접수 API(`POST /petitions/external`)가 사용.
+
+**Request Body**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `title` | string | 민원 제목 |
+| `content` | string | 민원 본문 |
+
+```json
+// Request
+{ "title": "가로등이 꺼져있어요", "content": "동네 가로등이 며칠째 꺼져있어서 밤에 위험해요" }
+```
+
+```json
+// Response 200
+{ "department_code": "01" }
+```
+
+> 분류 결과가 8개 도메인 카테고리 중 어디에도 매칭되지 않으면 `"08"`(행정·일반)로 fallback — 항상 유효한 부서 코드가 반환되므로 실패 케이스를 별도로 처리할 필요 없음.
 
 ### `POST /api/classify-task`
 부서 내 세부업무 자동 분류. 민원 텍스트 + department_code를 받아, 그 부서 안의 가장 유사한 세부업무(Task)를 찾아 반환. 담당자 배정(TASK_ASSIGNEE)은 하지 않음 — 여기까지가 AI 서버 역할.
@@ -282,7 +306,26 @@
 { "status": "indexed", "task_id": 100, "department_code": "01" }
 ```
 
-> **department_code**가 01~08이 아니면 `400` 에러. Delete API는 없음 — 잘못 색인했으면 같은 task_id로 다시 호출(upsert)해 덮어써야 함.
+> **department_code**가 01~08이 아니면 `400` 에러. 잘못 색인했으면 같은 task_id로 다시 호출(upsert)해 덮어쓰거나, 아래 DELETE로 지운 뒤 다시 색인하면 됨.
+
+### `DELETE /api/task-category/{department_code}/{task_id}`
+세부업무(TASK) 삭제 시 벡터DB 색인도 함께 제거. `/api/index-task-category`와 정확히 대칭되는 반대 방향 엔드포인트. `ieum_backend`가 `delete_task` 처리(DB 삭제 커밋) **이후**에 호출하는 것을 전제로 함.
+
+**Path Parameters**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `department_code` | string | 부서 코드 (01~08) |
+| `task_id` | int | 삭제할 업무의 실제 DB TASK.task_id |
+
+```json
+// Response 200
+{ "status": "deleted", "task_id": 100, "department_code": "01" }
+```
+
+> **멱등**: 색인이 없던 task_id를 지워도 에러 없이 `200`으로 통과함(ChromaDB `delete`가 존재하지 않는 id에 대해 에러를 던지지 않음) — 재시도해도 안전.
+>
+> **department_code**가 01~08이 아니면 `400` 에러.
 
 ---
 
