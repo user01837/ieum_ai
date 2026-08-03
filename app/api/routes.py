@@ -1,10 +1,10 @@
 ﻿from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.classifier.ollama_client import generate_draft_answer, classify_text, domain_name_to_department_code
+from app.classifier.ollama_client import generate_draft_answer, classify_text, domain_name_to_department_code, generate_knowledge_answer
 from app.classifier.draft_guardrail import apply_guardrail
 from app.classifier.legal_chat import search_legal_articles, generate_legal_answer
-from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category, remove_task_category
+from app.vectorstore.chroma_client import search_similar_complaints, add_complaint, search_matching_task_category, add_task_category, remove_task_category, add_knowledge_card, update_knowledge_card_deleted_status, search_similar_knowledge
 from app.classifier.ollama_client import generate_task_draft
 from app.classifier.draft_guardrail import apply_task_guardrail
 from app.vectorstore.task_chroma_client import search_similar_tasks, add_task
@@ -98,6 +98,34 @@ class IndexTaskCategoryRequest(BaseModel):
     name: str
     department_code: str
     description: str
+
+class IndexKnowledgeRequest(BaseModel):
+    knowledge_id: int
+    department_code: str
+    category_code: str
+    title: str
+    summary: str
+    content: str  # knowledge_log.content
+    warning_note: str
+    tags: list[str]
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query_text: str
+    department_code: str
+    category_code: str
+    top_k: int = 3
+
+
+class KnowledgeChatRequest(BaseModel):
+    question: str
+    department_code: str
+    category_code: str
+
+
+class KnowledgeChatResponse(BaseModel):
+    answer: str
+    referenced_knowledge: list[dict]
 
 
 @router.post("/similar-cases")
@@ -242,6 +270,70 @@ async def delete_task_category(department_code: str, task_id: int):
     _validate_lead_department_code(department_code)
     remove_task_category(task_id, department_code)
     return {"status": "deleted", "task_id": task_id, "department_code": department_code}
+
+
+@router.post("/knowledge/index")
+async def index_knowledge(req: IndexKnowledgeRequest):
+    """
+    새 노하우 카드 생성/수정 시 벡터 DB에 색인.
+    백엔드에서 knowledge 및 knowledge_log 테이블에 저장 후 호출.
+    """
+    add_knowledge_card(
+        knowledge_id=req.knowledge_id,
+        department_code=req.department_code,
+        category_code=req.category_code,
+        title=req.title,
+        summary=req.summary,
+        content=req.content,
+        warning_note=req.warning_note,
+        tags=req.tags,
+    )
+    return {"status": "indexed", "knowledge_id": req.knowledge_id}
+
+
+@router.delete("/knowledge/{knowledge_id}")
+async def delete_knowledge(knowledge_id: int):
+    """
+    노하우 카드 삭제 시 벡터 DB의 is_deleted 메타데이터를 True로 업데이트.
+    백엔드에서 is_deleted=1 처리 후 호출.
+    """
+    update_knowledge_card_deleted_status(knowledge_id, is_deleted=True)
+    return {"status": "deleted", "knowledge_id": knowledge_id}
+
+
+@router.post("/knowledge/search")
+async def search_knowledge(req: KnowledgeSearchRequest):
+    """
+    질문과 유사한 노하우 카드를 검색.
+    """
+    # --- [중요] 디버깅 코드: 필터링 없이 ChromaDB의 실제 저장 데이터를 확인합니다 ---
+    from app.vectorstore.chroma_client import get_knowledge_collection
+    collection = get_knowledge_collection()
+    # 필터 없이 컬렉션의 모든 아이템을 가져옵니다. (최대 100개)
+    all_items = collection.get(limit=100, include=["metadatas", "documents"])
+    print("\n--- [디버깅] ChromaDB 'knowledge_base' 컬렉션 전체 데이터 확인 ---")
+    import json
+    print(json.dumps(all_items, indent=2, ensure_ascii=False))
+    print("----------------------------------------------------------------\n")
+    # --- 디버깅 코드 종료 --- 
+
+    hits = search_similar_knowledge(
+        query_text=req.query_text,
+        department_code=req.department_code,
+        category_code=req.category_code,
+        top_k=req.top_k,
+    )
+    return {"results": hits}
+
+
+@router.post("/knowledge/chat", response_model=KnowledgeChatResponse)
+async def knowledge_chat(req: KnowledgeChatRequest):
+    """유사 노하우 카드를 기반으로 질문에 대한 답변 생성."""
+    similar = search_similar_knowledge(req.question, req.department_code, req.category_code)
+    if not similar:
+        return KnowledgeChatResponse(answer="죄송합니다. 문의하신 내용과 관련된 노하우를 찾지 못했습니다. 질문을 좀 더 구체적으로 작성해주시면 더 정확한 답변을 드릴 수 있습니다.", referenced_knowledge=[])
+    answer = await generate_knowledge_answer(req.question, similar)
+    return KnowledgeChatResponse(answer=answer, referenced_knowledge=similar)
 
 
 @router.post("/similar-tasks")
