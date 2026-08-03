@@ -23,12 +23,14 @@ from app.embeddings.reranker import rerank
 _client = None
 _collection = None
 _task_collection = None
+_knowledge_collection = None
 
 COLLECTION_NAME = "complaints"
 # 사업계획서용 task_chroma_client.py가 이미 "tasks" 컬렉션명을 쓰고 있어서
 # (부서01 기준 ID가 "01_1"~"01_30"까지 존재) 이름이 겹치면 upsert 시 서로 덮어쓰게 된다.
 # 그래서 부서 내 세부업무(TASK) 분류용 데이터는 완전히 별도인 이 컬렉션에 저장한다.
 TASK_COLLECTION_NAME = "task_categories"
+KNOWLEDGE_COLLECTION_NAME = "knowledge_base"
 
 
 def get_client() -> chromadb.ClientAPI:
@@ -58,6 +60,17 @@ def get_task_category_collection():
             metadata={"hnsw:space": "cosine"},
         )
     return _task_collection
+
+
+def get_knowledge_collection():
+    global _knowledge_collection
+    if _knowledge_collection is None:
+        client = get_client()
+        _knowledge_collection = client.get_or_create_collection(
+            name=KNOWLEDGE_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _knowledge_collection
 
 
 def add_complaint(
@@ -193,6 +206,142 @@ def search_similar_complaints(
 
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
+    return candidates[:top_k]
+
+
+def add_knowledge_card(
+    knowledge_id: int,
+    department_code: str,
+    category_code: str,
+    title: str,
+    summary: str,
+    content: str,
+    warning_note: str,
+    tags: list[str],
+) -> None:
+    """
+    지식베이스 카드 1건을 벡터화하여 ChromaDB에 저장(upsert).
+    검색용 벡터는 제목, 요약, 노하우, 중요사항을 합친 텍스트 기준.
+    """
+    text_to_embed = f"제목: {title}\n핵심 요약: {summary}\n노하우: {content}\n중요 안내사항: {warning_note}"
+    vector = embed_text(text_to_embed)
+    collection = get_knowledge_collection()
+
+    metadata = {
+        "knowledge_id": knowledge_id,
+        "department_code": department_code,
+        "category_code": category_code,
+        "title": title,
+        "summary": summary,
+        "content": content,
+        "warning_note": warning_note,
+        "tags": ",".join(tags),  # 리스트는 메타데이터로 저장 불가, 문자열로 변환
+        "is_deleted": False,
+    }
+
+    collection.upsert(
+        ids=[str(knowledge_id)],
+        embeddings=[vector],
+        documents=[text_to_embed],
+        metadatas=[metadata],
+    )
+
+
+def update_knowledge_card_deleted_status(knowledge_id: int, is_deleted: bool) -> None:
+    """지식베이스 카드의 is_deleted 상태를 업데이트 (소프트 삭제/복원)."""
+    collection = get_knowledge_collection()
+    # is_deleted 상태만 변경하기 위해 기존 메타데이터를 가져와 업데이트
+    existing = collection.get(ids=[str(knowledge_id)], include=["metadatas"])
+    if not existing or not existing["metadatas"]:
+        return  # 해당 ID가 없으면 아무것도 하지 않음
+
+    metadata = existing["metadatas"][0]
+    metadata["is_deleted"] = is_deleted
+
+    collection.update(
+        ids=[str(knowledge_id)],
+        metadatas=[metadata],
+    )
+
+
+def search_similar_knowledge(
+    query_text: str,
+    department_code: str,
+    category_code: str,
+    top_k: int = 3,
+    rerank_candidates: int = 20,
+) -> list[dict]:
+    """
+    질문과 유사한 지식베이스 카드를 검색.
+    1. 사용자 부서 및 현재 화면의 카테고리로 우선 검색.
+    2. 결과가 없으면, 카테고리 필터만으로 모든 부서에서 다시 검색.
+    """
+    collection = get_knowledge_collection()
+    vector = embed_text(query_text)
+
+    # --- [중요] 디버깅 코드: ChromaDB의 실제 저장 데이터를 확인합니다 ---
+    print("\n--- [디버깅] search_similar_knowledge 함수 진입 ---")
+    print(f"Collection Count: {collection.count()}")
+    print(f"요청 필터: department_code='{department_code}', category_code='{category_code}'")
+    all_items = collection.get(limit=100, include=["metadatas"])
+    import json
+    print("--- 전체 데이터 샘플 (최대 100건) ---")
+    print(json.dumps(all_items['metadatas'], indent=2, ensure_ascii=False))
+    print("--------------------------------------------------\n")
+    # --- 디버깅 코드 종료 ---
+
+    # 1단계: 부서와 카테고리로 엄격하게 필터링하여 검색
+    strict_where_filter = {
+        "$and": [
+            {"department_code": department_code},
+            {"category_code": category_code},
+            {"is_deleted": False},
+        ]
+    }
+    result = collection.query(
+        query_embeddings=[vector],
+        n_results=rerank_candidates,
+        where=strict_where_filter,
+    )
+
+    # 2단계: 1단계 검색 결과가 없으면, 카테고리 필터만으로 모든 부서에서 재검색
+    if not result.get("ids", [[]])[0]:
+        print(f"부서 '{department_code}' 내에서 결과를 찾지 못해, 카테고리 '{category_code}' 내 모든 부서를 대상으로 재검색합니다.")
+        relaxed_where_filter = {
+            "$and": [
+                {"category_code": category_code},
+                {"is_deleted": False},
+            ]
+        }
+        result = collection.query(
+            query_embeddings=[vector],
+            n_results=rerank_candidates,
+            where=relaxed_where_filter,
+        )
+
+    ids = result.get("ids", [[]])[0]
+    documents = result.get("documents", [[]])[0]
+    metadatas = result.get("metadatas", [[]])[0]
+    distances = result.get("distances", [[]])[0]
+
+    candidates = [
+        {
+            **metadatas[i],
+            "similarity": round((1 - distances[i]) * 100, 1),
+            "_search_text": documents[i],
+        }
+        for i in range(len(ids))
+    ]
+
+    if not candidates:
+        return []
+
+    rerank_scores = rerank(query_text, [c["_search_text"] for c in candidates])
+    for c, score in zip(candidates, rerank_scores):
+        c["rerank_score"] = round(score, 4)
+        del c["_search_text"]
+
+    candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
     return candidates[:top_k]
 
 

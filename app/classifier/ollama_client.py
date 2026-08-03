@@ -125,6 +125,40 @@ async def generate_draft_answer(complaint_text: str, similar_cases: list[dict]) 
     return res.json()["response"].strip()
 
 
+async def generate_knowledge_answer(question: str, similar_knowledge: list[dict]) -> str:
+    """유사 노하우 카드를 근거로 질문에 대한 답변을 생성."""
+    context_block = "\n\n".join(
+        f"[참고 노하우 {i+1}] {k['title']}\n"
+        f"- 핵심 요약: {k['summary']}\n"
+        f"- 노하우: {k['content']}\n"
+        f"- 중요 안내사항: {k['warning_note']}"
+        for i, k in enumerate(similar_knowledge)
+    )
+    prompt = (
+        "다음은 사용자의 질문과, 참고할 수 있는 내부 업무 노하우 카드입니다. "
+        "노하우 카드의 내용을 바탕으로 질문에 대해 친절하고 명확하게 답변하세요.\n"
+        "- 참고 노하우를 단순히 요약하지 말고, 질문의 핵심에 맞춰 관련된 내용을 자연스럽게 설명하세요.\n"
+        "- '노하우 카드에 따르면' 같은 표현은 쓰지 마세요.\n"
+        "- 만약 참고 노하우 중에 질문과 관련된 내용이 전혀 없다면, '관련된 노하우를 찾지 못했습니다.'라고 솔직하게 답변하세요.\n"
+        "- 절대 없는 사실을 지어내지 마세요.\n"
+        f"[사용자 질문]\n{question}\n\n"
+        f"[참고 노하우]\n{context_block}\n\n"
+        "[답변]"
+    )
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        res = await client.post(
+            f"{settings.ollama_host}/api/generate",
+            json={
+                "model": settings.generation_model_name,
+                "prompt": prompt,
+                "stream": False,
+            },
+        )
+        res.raise_for_status()
+    return res.json()["response"].strip()
+
+
 def _extract_json_block(raw: str) -> str:
     """모델 응답에 JSON 앞뒤로 다른 텍스트가 붙어 나올 수 있어 {...} 블록만 추출."""
     match = re.search(r"\{.*\}", raw, re.DOTALL)
@@ -251,4 +285,3 @@ async def generate_task_draft(title: str, overview: str, similar_tasks: list[dic
     except ValueError:
         raw_retry = await _call_llm()
         return parse_task_draft_response(raw_retry)
-
