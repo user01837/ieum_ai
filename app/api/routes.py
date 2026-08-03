@@ -103,9 +103,10 @@ class IndexKnowledgeRequest(BaseModel):
     knowledge_id: int
     department_code: str
     category_code: str
+    scope_code: str
     title: str
     summary: str
-    content: str  # knowledge_log.content
+    content: str  # 카드에 달린 모든 KNOWLEDGE_LOG.content를 합친 값 (호출자 책임)
     warning_note: str
     tags: list[str]
 
@@ -113,14 +114,14 @@ class IndexKnowledgeRequest(BaseModel):
 class KnowledgeSearchRequest(BaseModel):
     query_text: str
     department_code: str
-    category_code: str
+    category_code: str | None = None
     top_k: int = 3
 
 
 class KnowledgeChatRequest(BaseModel):
     question: str
     department_code: str
-    category_code: str
+    category_code: str | None = None
 
 
 class KnowledgeChatResponse(BaseModel):
@@ -282,6 +283,7 @@ async def index_knowledge(req: IndexKnowledgeRequest):
         knowledge_id=req.knowledge_id,
         department_code=req.department_code,
         category_code=req.category_code,
+        scope_code=req.scope_code,
         title=req.title,
         summary=req.summary,
         content=req.content,
@@ -306,17 +308,6 @@ async def search_knowledge(req: KnowledgeSearchRequest):
     """
     질문과 유사한 노하우 카드를 검색.
     """
-    # --- [중요] 디버깅 코드: 필터링 없이 ChromaDB의 실제 저장 데이터를 확인합니다 ---
-    from app.vectorstore.chroma_client import get_knowledge_collection
-    collection = get_knowledge_collection()
-    # 필터 없이 컬렉션의 모든 아이템을 가져옵니다. (최대 100개)
-    all_items = collection.get(limit=100, include=["metadatas", "documents"])
-    print("\n--- [디버깅] ChromaDB 'knowledge_base' 컬렉션 전체 데이터 확인 ---")
-    import json
-    print(json.dumps(all_items, indent=2, ensure_ascii=False))
-    print("----------------------------------------------------------------\n")
-    # --- 디버깅 코드 종료 --- 
-
     hits = search_similar_knowledge(
         query_text=req.query_text,
         department_code=req.department_code,

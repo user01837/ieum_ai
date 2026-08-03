@@ -69,7 +69,10 @@ async def generate_legal_answer(question: str, articles: list[dict]) -> str:
         f"[질문]\n{question}\n\n"
         "[답변]"
     )
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # CPU 추론 환경에서는 60초 안에 못 끝나는 경우가 있어(다른 모델과의 스왑 등으로 특히)
+    # draft/knowledge-chat과 동일하게 120초로 맞춘다 - num_predict=150이라 실제로는
+    # 대부분 훨씬 빨리 끝나고, 이 타임아웃은 드문 느린 케이스를 위한 여유값일 뿐이다.
+    async with httpx.AsyncClient(timeout=120.0) as client:
         res = await client.post(
             f"{settings.ollama_host}/api/generate",
             json={

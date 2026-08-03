@@ -137,6 +137,7 @@ async def generate_knowledge_answer(question: str, similar_knowledge: list[dict]
     prompt = (
         "다음은 사용자의 질문과, 참고할 수 있는 내부 업무 노하우 카드입니다. "
         "노하우 카드의 내용을 바탕으로 질문에 대해 친절하고 명확하게 답변하세요.\n"
+        "- 반드시 한국어로만 답변하세요. 다른 언어(중국어, 영어 등) 단어나 표현을 섞지 마세요.\n"
         "- 참고 노하우를 단순히 요약하지 말고, 질문의 핵심에 맞춰 관련된 내용을 자연스럽게 설명하세요.\n"
         "- '노하우 카드에 따르면' 같은 표현은 쓰지 마세요.\n"
         "- 만약 참고 노하우 중에 질문과 관련된 내용이 전혀 없다면, '관련된 노하우를 찾지 못했습니다.'라고 솔직하게 답변하세요.\n"
@@ -153,6 +154,9 @@ async def generate_knowledge_answer(question: str, similar_knowledge: list[dict]
                 "model": settings.generation_model_name,
                 "prompt": prompt,
                 "stream": False,
+                "options": {
+                    "temperature": 0.2,  # 언어 혼용/이탈 등 산만한 생성을 줄이기 위해 다소 보수적으로 설정
+                },
             },
         )
         res.raise_for_status()

@@ -213,6 +213,7 @@ def add_knowledge_card(
     knowledge_id: int,
     department_code: str,
     category_code: str,
+    scope_code: str,
     title: str,
     summary: str,
     content: str,
@@ -222,6 +223,15 @@ def add_knowledge_card(
     """
     지식베이스 카드 1건을 벡터화하여 ChromaDB에 저장(upsert).
     검색용 벡터는 제목, 요약, 노하우, 중요사항을 합친 텍스트 기준.
+
+    content는 호출자(백엔드)가 그 카드에 달린 모든 노하우(KNOWLEDGE_LOG) 중
+    삭제되지 않은 것들을 합쳐서 넘겨야 한다 - 카드 하나에 로그가 여러 건 달릴 수
+    있는데(1:N) 여기 upsert는 knowledge_id 하나당 문서 1개뿐이라, 로그 하나만
+    넘기면 이전 로그 내용이 검색에서 사라진다.
+
+    scope_code(KNOWLEDGE_SCOPE: 01=내 부서, 02=전체 공개)를 메타데이터에 저장해
+    search_similar_knowledge가 "내 부서 것 + 전체공개인 것"만 걸러 보이도록
+    한다 - DB 열람 권한 규칙(knowledge.py get_knowledge_detail)과 동일한 기준.
     """
     text_to_embed = f"제목: {title}\n핵심 요약: {summary}\n노하우: {content}\n중요 안내사항: {warning_note}"
     vector = embed_text(text_to_embed)
@@ -231,6 +241,7 @@ def add_knowledge_card(
         "knowledge_id": knowledge_id,
         "department_code": department_code,
         "category_code": category_code,
+        "scope_code": scope_code,
         "title": title,
         "summary": summary,
         "content": content,
@@ -267,57 +278,38 @@ def update_knowledge_card_deleted_status(knowledge_id: int, is_deleted: bool) ->
 def search_similar_knowledge(
     query_text: str,
     department_code: str,
-    category_code: str,
+    category_code: str | None = None,
     top_k: int = 3,
     rerank_candidates: int = 20,
 ) -> list[dict]:
     """
     질문과 유사한 지식베이스 카드를 검색.
-    1. 사용자 부서 및 현재 화면의 카테고리로 우선 검색.
-    2. 결과가 없으면, 카테고리 필터만으로 모든 부서에서 다시 검색.
+    접근 범위는 "내 부서(department_code 일치) 것 + 전체공개(scope_code=02)인 것"으로
+    고정 - DB 열람 권한 규칙과 동일하다. 다른 부서의 '내 부서 전용' 카드는 검색 결과에
+    나오면 안 되므로, 이전처럼 결과가 없다고 전체 부서로 재검색하는 폴백은 두지 않는다.
+    category_code가 없으면(None) 카테고리 구분 없이 검색 - 자유 질문형 챗봇에서는
+    사용자가 카테고리를 고르지 않으므로 필요.
     """
     collection = get_knowledge_collection()
     vector = embed_text(query_text)
 
-    # --- [중요] 디버깅 코드: ChromaDB의 실제 저장 데이터를 확인합니다 ---
-    print("\n--- [디버깅] search_similar_knowledge 함수 진입 ---")
-    print(f"Collection Count: {collection.count()}")
-    print(f"요청 필터: department_code='{department_code}', category_code='{category_code}'")
-    all_items = collection.get(limit=100, include=["metadatas"])
-    import json
-    print("--- 전체 데이터 샘플 (최대 100건) ---")
-    print(json.dumps(all_items['metadatas'], indent=2, ensure_ascii=False))
-    print("--------------------------------------------------\n")
-    # --- 디버깅 코드 종료 ---
-
-    # 1단계: 부서와 카테고리로 엄격하게 필터링하여 검색
-    strict_where_filter = {
+    where_filter = {
         "$and": [
-            {"department_code": department_code},
-            {"category_code": category_code},
             {"is_deleted": False},
+            {"$or": [
+                {"department_code": department_code},
+                {"scope_code": "02"},
+            ]},
         ]
     }
+    if category_code:
+        where_filter["$and"].append({"category_code": category_code})
+
     result = collection.query(
         query_embeddings=[vector],
         n_results=rerank_candidates,
-        where=strict_where_filter,
+        where=where_filter,
     )
-
-    # 2단계: 1단계 검색 결과가 없으면, 카테고리 필터만으로 모든 부서에서 재검색
-    if not result.get("ids", [[]])[0]:
-        print(f"부서 '{department_code}' 내에서 결과를 찾지 못해, 카테고리 '{category_code}' 내 모든 부서를 대상으로 재검색합니다.")
-        relaxed_where_filter = {
-            "$and": [
-                {"category_code": category_code},
-                {"is_deleted": False},
-            ]
-        }
-        result = collection.query(
-            query_embeddings=[vector],
-            n_results=rerank_candidates,
-            where=relaxed_where_filter,
-        )
 
     ids = result.get("ids", [[]])[0]
     documents = result.get("documents", [[]])[0]
