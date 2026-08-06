@@ -150,7 +150,11 @@ async def generate_knowledge_answer(question: str, similar_knowledge: list[dict]
         "[답변]"
     )
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    # 참고 노하우 카드 여러 건의 전체 내용을 프롬프트에 담아 legal-chat보다 생성이
+    # 오래 걸린다(로컬 실측 약 85초). 백엔드 쪽 호출 타임아웃(180초)보다는 짧게 잡아,
+    # Ollama가 실제로 멈춘 경우 이 타임아웃이 먼저 걸려 backend가 원인을 알 수 있는
+    # 500 응답을 받게 한다(backend 쪽만 먼저 끊기면 빈 메시지의 RequestError만 남음).
+    async with httpx.AsyncClient(timeout=150.0) as client:
         res = await client.post(
             f"{settings.ollama_host}/api/generate",
             json={
