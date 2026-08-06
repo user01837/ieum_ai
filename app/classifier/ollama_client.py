@@ -286,9 +286,15 @@ async def generate_task_draft(title: str, overview: str, similar_tasks: list[dic
             res.raise_for_status()
         return res.json()["response"].strip()
 
-    raw = await _call_llm()
-    try:
-        return parse_task_draft_response(raw)
-    except ValueError:
-        raw_retry = await _call_llm()
-        return parse_task_draft_response(raw_retry)
+    # LLM이 JSON 형식을 가끔 깨뜨려 parse_task_draft_response가 ValueError(JSON
+    # 파싱 실패 포함 - json.JSONDecodeError는 ValueError의 하위클래스)를 던지는
+    # 경우가 있다. 재시도 1회로는 두 번 연속 실패할 확률이 무시할 수 없어 500이
+    # 간헐적으로 발생했다 - 최대 3회까지 시도.
+    last_error: ValueError | None = None
+    for _ in range(3):
+        raw = await _call_llm()
+        try:
+            return parse_task_draft_response(raw)
+        except ValueError as e:
+            last_error = e
+    raise last_error
